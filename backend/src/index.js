@@ -60,10 +60,12 @@ console.log('Loading routes...');
 const authRoutes = require('./routes/authRoutes');
 const leadsRoutes = require('./routes/leadsRoutes');
 const scraperRoutes = require('./routes/scraperRoutes');
+const aiRoutes = require('./routes/aiRoutes');
 console.log('Routes loaded, mounting...');
 app.use('/api/auth', authRoutes);
 app.use('/api/leads', leadsRoutes);
 app.use('/api/scraper', scraperRoutes);
+app.use('/api/ai', aiRoutes);
 console.log('Routes mounted successfully!');
 
 // Error handling middleware

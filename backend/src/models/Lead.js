@@ -2,6 +2,11 @@
 const mongoose = require('mongoose');
 
 const LeadSchema = new mongoose.Schema({
+  user: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
+  },
   name: {
     type: String,
     required: [true, 'Please add a business name']
@@ -59,9 +64,17 @@ const LeadSchema = new mongoose.Schema({
   },
   reviews: {
     type: Number
+  },
+  isInLeads: {
+    type: Boolean,
+    default: false
   }
 }, {
   timestamps: true
 });
+
+// Prevent duplicate leads for same user by name OR site
+LeadSchema.index({ user: 1, name: 1 }, { unique: true });
+LeadSchema.index({ user: 1, site: 1 }, { unique: true });
 
 module.exports = mongoose.model('Lead', LeadSchema);
