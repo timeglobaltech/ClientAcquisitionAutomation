@@ -1,0 +1,208 @@
+import { useState } from "react";
+import { Search, Filter, Download, CheckCircle, Globe, MapPin, Phone, Mail, Check } from "lucide-react";
+import { motion, AnimatePresence } from "motion/react";
+import { GlowButton, GlassCard } from "../../utils/helpers";
+import { scraperAPI, leadsAPI } from "../../services/api";
+
+const mockScraperResults = [
+  { id: 1, name: "Marco's Italian Kitchen", type: "Restaurant", location: "New York, NY", phone: "+1 212 555 0142", email: "marco@marcoskitchen.com", website: "marcoskitchen.com", rating: 4.5, reviews: 234 },
+  { id: 2, name: "FitZone Gym", type: "Gym", location: "Austin, TX", phone: "+1 512 555 0198", email: "info@fitzonegym.io", website: "fitzonegym.io", rating: 4.7, reviews: 156 },
+  { id: 3, name: "Apex Digital Agency", type: "Agency", location: "Chicago, IL", phone: "+1 312 555 0074", email: "hello@apexdigital.co", website: "apexdigital.co", rating: 4.8, reviews: 89 },
+];
+
+export default function ScraperView() {
+  const [searchQuery, setSearchQuery] = useState("gym");
+  const [location, setLocation] = useState("New York");
+  const [isScraping, setIsScraping] = useState(false);
+  const [results, setResults] = useState([]);
+  const [showSuccess, setShowSuccess] = useState(false);
+  const [dataSource, setDataSource] = useState('');
+  const [addedLeadIds, setAddedLeadIds] = useState(new Set());
+
+  const addToLeads = async (lead) => {
+    try {
+      await leadsAPI.createLead(lead);
+      setAddedLeadIds(prev => new Set([...prev, lead._id || lead.id]));
+    } catch (error) {
+      console.error("Error adding lead:", error);
+    }
+  };
+
+  const handleScrape = async () => {
+    setIsScraping(true);
+    setShowSuccess(false);
+    setAddedLeadIds(new Set());
+    try {
+      const response = await scraperAPI.scrapeLeads(searchQuery, location);
+      setResults(response.data.leads);
+      setDataSource(response.data.source);
+      setIsScraping(false);
+      setShowSuccess(true);
+      setTimeout(() => setShowSuccess(false), 5000);
+    } catch (error) {
+      console.error("Error scraping leads:", error);
+      setIsScraping(false);
+    }
+  };
+
+  return (
+    <div className="p-6 space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-bold text-white" style={{ fontFamily: "Orbitron, sans-serif" }}>
+            Scraper Dashboard
+          </h1>
+          <p className="text-sm text-white/40 mt-0.5">
+            Scrape leads from Google Maps, LinkedIn, and directories
+          </p>
+        </div>
+      </div>
+
+      {/* Info Box for Real Data Setup */}
+      <div className="p-4 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-400">
+        <h3 className="text-sm font-semibold mb-1">📊 How to get REAL Data:</h3>
+        <ol className="text-xs space-y-1 text-amber-300/90">
+          <li>1. Get a free API key from <a href="https://serpapi.com" target="_blank" rel="noopener noreferrer" className="underline hover:text-amber-200">serpapi.com</a></li>
+          <li>2. Open the <code className="bg-black/30 px-1.5 py-0.5 rounded text-xs">backend/.env</code> file and replace <code className="bg-black/30 px-1 py-0.5 rounded text-xs">your_serpapi_key_here</code> with your actual key</li>
+          <li>3. Restart your backend server</li>
+        </ol>
+      </div>
+
+      <AnimatePresence>
+        {showSuccess && (
+          <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+            className="flex items-center gap-3 p-4 rounded-xl bg-green-500/10 border border-green-500/30 text-green-400">
+            <CheckCircle className="w-5 h-5" />
+            <span className="text-sm font-semibold">{results.length} new leads scraped successfully from {dataSource}!</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <GlassCard className="p-6">
+        <div className="grid md:grid-cols-4 gap-4 mb-6">
+          <div className="md:col-span-2">
+            <label className="text-xs text-white/50 mb-2 block">Search Query (e.g., restaurant, gym, agency)</label>
+            <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus-within:border-purple-500/50">
+              <Search className="w-4 h-4 text-white/40" />
+              <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="e.g., restaurants in New York"
+                className="bg-transparent w-full text-white text-sm outline-none" />
+            </div>
+          </div>
+          <div className="md:col-span-1">
+            <label className="text-xs text-white/50 mb-2 block">Location</label>
+            <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus-within:border-purple-500/50">
+              <MapPin className="w-4 h-4 text-white/40" />
+              <input type="text" value={location} onChange={(e) => setLocation(e.target.value)}
+                placeholder="City, State"
+                className="bg-transparent w-full text-white text-sm outline-none" />
+            </div>
+          </div>
+          <div className="flex items-end">
+            <GlowButton onClick={handleScrape} disabled={isScraping} className="w-full justify-center">
+              {isScraping ? (
+                <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Scraping...</>
+              ) : (
+                <><Search className="w-4 h-4" /> Start Scraping</>
+              )}
+            </GlowButton>
+          </div>
+        </div>
+
+        <div className="flex gap-3 mb-6 flex-wrap">
+          <GlowButton variant="ghost" className="text-xs py-1.5 px-3">
+            <Filter className="w-3.5 h-3.5 mr-1.5" /> Filter Results
+          </GlowButton>
+          <GlowButton variant="ghost" className="text-xs py-1.5 px-3">
+            <Download className="w-3.5 h-3.5 mr-1.5" /> Export to CSV
+          </GlowButton>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm min-w-[1100px]">
+            <thead>
+              <tr className="border-b border-white/8">
+                {["Business Name", "Type", "Location", "Phone", "Email", "Rating", "Actions"].map((header, i) => (
+                  <th
+                    key={i}
+                    className={`pb-4 text-left text-xs text-white/40 font-medium whitespace-nowrap
+                      ${i === 0 ? "w-[28%]" : ""}
+                      ${i === 1 ? "w-[10%]" : ""}
+                      ${i === 2 ? "w-[12%]" : ""}
+                      ${i === 3 ? "w-[14%]" : ""}
+                      ${i === 4 ? "w-[18%]" : ""}
+                      ${i === 5 ? "w-[8%]" : ""}
+                      ${i === 6 ? "w-[10%] text-right" : ""}`}
+                  >
+                    {header}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {results.length > 0 ? (
+                results.map((lead, i) => (
+                  <motion.tr
+                    key={lead.id}
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: i * 0.05 }}
+                    className="border-b border-white/5 hover:bg-purple-500/5 transition-colors group"
+                  >
+                    <td className="py-4 font-semibold text-white flex items-center gap-2">
+                      <Globe className="w-3.5 h-3.5 text-purple-400" /> {lead.name}
+                    </td>
+                    <td className="py-4 text-white/60">{lead.type}</td>
+                    <td className="py-4 text-white/60 text-sm">{lead.location}</td>
+                    <td className="py-4 text-white/70 text-sm">
+                      <div className="flex items-center gap-1.5">
+                        <Phone className="w-3.5 h-3.5 flex-shrink-0" />
+                        {lead.phone}
+                      </div>
+                    </td>
+                    <td className="py-4 text-white/70 text-sm">
+                      <div className="flex items-center gap-1.5">
+                        <Mail className="w-3.5 h-3.5 flex-shrink-0" />
+                        {lead.email}
+                      </div>
+                    </td>
+                    <td className="py-4">
+                      <span className="text-yellow-400 font-semibold">★ {lead.rating} ({lead.reviews})</span>
+                    </td>
+                    <td className="py-4 text-right">
+                      <div className="flex gap-2 justify-end">
+                        <button className="text-xs px-4 py-1.5 rounded-lg bg-purple-500/10 text-purple-400 border border-purple-500/20 hover:bg-purple-500/20 transition-colors">
+                          View
+                        </button>
+                        <button
+                          onClick={() => addToLeads(lead)}
+                          disabled={addedLeadIds.has(lead._id || lead.id)}
+                          className={`text-xs px-4 py-1.5 rounded-lg transition-colors flex items-center gap-1.5
+                            ${addedLeadIds.has(lead._id || lead.id) 
+                              ? 'bg-green-500/10 text-green-400 border border-green-500/20' 
+                              : 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 hover:bg-cyan-500/20'}`}
+                        >
+                          {addedLeadIds.has(lead._id || lead.id) ? (
+                            <><Check className="w-3.5 h-3.5" /> Added</>
+                          ) : (
+                            <>Add to Leads</>
+                          )}
+                        </button>
+                      </div>
+                    </td>
+                  </motion.tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={7} className="py-12 text-center text-white/40 text-sm">
+                    No scraped leads yet. Start scraping to get results!
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </GlassCard>
+    </div>
+  );
+}

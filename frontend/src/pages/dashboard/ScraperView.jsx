@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Search, Filter, Download, CheckCircle, Globe, MapPin, Phone, Mail, Check } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Search, Filter, Download, CheckCircle, Globe, MapPin, Phone, Mail, Check, Link2 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { GlowButton, GlassCard } from "../../utils/helpers";
 import { scraperAPI, leadsAPI } from "../../services/api";
@@ -14,14 +14,46 @@ export default function ScraperView() {
   const [searchQuery, setSearchQuery] = useState("gym");
   const [location, setLocation] = useState("New York");
   const [isScraping, setIsScraping] = useState(false);
+  const [isSendingToN8n, setIsSendingToN8n] = useState(false);
   const [results, setResults] = useState([]);
   const [showSuccess, setShowSuccess] = useState(false);
   const [dataSource, setDataSource] = useState('');
   const [addedLeadIds, setAddedLeadIds] = useState(new Set());
+  const [webhookUrl, setWebhookUrl] = useState(() => {
+    return localStorage.getItem('n8n_webhook_url') || '';
+  });
+
+  // Load previously saved scraped leads on component mount
+  useEffect(() => {
+    const loadSavedScrapedLeads = async () => {
+      try {
+        const response = await leadsAPI.getScrapedLeads();
+        if (response.data.leads.length > 0) {
+          setResults(response.data.leads);
+          // Check which leads are already added (isInLeads: true)
+          const addedIds = new Set();
+          response.data.leads.forEach(lead => {
+            if (lead.isInLeads) {
+              addedIds.add(lead._id);
+            }
+          });
+          setAddedLeadIds(addedIds);
+        }
+      } catch (error) {
+        console.error("Error loading saved scraped leads:", error);
+      }
+    };
+    loadSavedScrapedLeads();
+  }, []);
+
+  // Save webhook URL to localStorage when it changes
+  useEffect(() => {
+    localStorage.setItem('n8n_webhook_url', webhookUrl);
+  }, [webhookUrl]);
 
   const addToLeads = async (lead) => {
     try {
-      await leadsAPI.createLead(lead);
+      await leadsAPI.moveToLeads([lead._id || lead.id]);
       setAddedLeadIds(prev => new Set([...prev, lead._id || lead.id]));
     } catch (error) {
       console.error("Error adding lead:", error);
@@ -33,7 +65,7 @@ export default function ScraperView() {
     setShowSuccess(false);
     setAddedLeadIds(new Set());
     try {
-      const response = await scraperAPI.scrapeLeads(searchQuery, location);
+      const response = await scraperAPI.scrapeLeads(searchQuery, location, webhookUrl);
       setResults(response.data.leads);
       setDataSource(response.data.source);
       setIsScraping(false);
@@ -43,6 +75,45 @@ export default function ScraperView() {
       console.error("Error scraping leads:", error);
       setIsScraping(false);
     }
+  };
+
+  const sendToN8n = async () => {
+    if (!webhookUrl) {
+      alert('Please enter an n8n webhook URL first!');
+      return;
+    }
+    
+    if (results.length === 0) {
+      alert('No leads to send! Please scrape some leads first.');
+      return;
+    }
+
+    setIsSendingToN8n(true);
+    try {
+      // Send directly to n8n from frontend
+      const response = await fetch(webhookUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          query: searchQuery,
+          location: location,
+          leads: results,
+          timestamp: new Date().toISOString()
+        })
+      });
+      
+      if (response.ok) {
+        alert('Leads sent to n8n successfully!');
+      } else {
+        alert('Failed to send leads to n8n. Please check your webhook URL.');
+      }
+    } catch (error) {
+      console.error("Error sending to n8n:", error);
+      alert('Error sending leads to n8n: ' + error.message);
+    }
+    setIsSendingToN8n(false);
   };
 
   return (
@@ -79,7 +150,7 @@ export default function ScraperView() {
       </AnimatePresence>
 
       <GlassCard className="p-6">
-        <div className="grid md:grid-cols-4 gap-4 mb-6">
+        <div className="grid md:grid-cols-4 gap-4 mb-4">
           <div className="md:col-span-2">
             <label className="text-xs text-white/50 mb-2 block">Search Query (e.g., restaurant, gym, agency)</label>
             <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus-within:border-purple-500/50">
@@ -106,6 +177,81 @@ export default function ScraperView() {
                 <><Search className="w-4 h-4" /> Start Scraping</>
               )}
             </GlowButton>
+          </div>
+        </div>
+
+        <div className="mb-6 bg-gradient-to-br from-pink-500/10 to-purple-500/10 border border-pink-500/30 rounded-xl p-5">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-pink-500 to-purple-500 flex items-center justify-center">
+              <svg className="w-5 h-5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M18 3v4m-4-4v4M6 21v-4m4 4v-4M6 7h12a2 2 0 012 2v8a2 2 0 01-2 2H6a2 2 0 01-2-2V9a2 2 0 012-2z"/>
+              </svg>
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-white" style={{ fontFamily: 'Orbitron, sans-serif' }}>n8n INTEGRATION</h3>
+              <p className="text-xs text-pink-300/80">Automate your lead outreach workflows</p>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <div>
+              <label className="text-xs text-white/60 mb-2 block flex items-center gap-2">
+                <Globe className="w-3.5 h-3.5" /> Webhook URL
+              </label>
+              <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus-within:border-pink-500/50">
+                <Link2 className="w-4 h-4 text-pink-400/70" />
+                <input type="url" value={webhookUrl} onChange={(e) => setWebhookUrl(e.target.value)}
+                  placeholder="https://your-n8n-domain.com/webhook-test/"
+                  className="bg-transparent w-full text-white text-sm outline-none placeholder:text-white/20" />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3">
+              <div className="bg-white/5 rounded-lg p-3 border border-white/10">
+                <div className="flex items-start gap-2">
+                  <CheckCircle className="w-4 h-4 text-cyan-400 mt-0.5 flex-shrink-0" />
+                  <div className="text-xs text-white/70">
+                    <span className="font-semibold text-white">Auto-sends</span> each scraped lead to n8n
+                  </div>
+                </div>
+              </div>
+              <div className="bg-white/5 rounded-lg p-3 border border-white/10">
+                <div className="flex items-start gap-2">
+                  <CheckCircle className="w-4 h-4 text-cyan-400 mt-0.5 flex-shrink-0" />
+                  <div className="text-xs text-white/70">
+                    <span className="font-semibold text-white">Triggers</span> your workflow with full contact data
+                  </div>
+                </div>
+              </div>
+              <div className="bg-white/5 rounded-lg p-3 border border-white/10">
+                <div className="flex items-start gap-2">
+                  <CheckCircle className="w-4 h-4 text-cyan-400 mt-0.5 flex-shrink-0" />
+                  <div className="text-xs text-white/70">
+                    <span className="font-semibold text-white">Connects</span> to CRM, Slack, Email, WhatsApp
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <button
+              onClick={sendToN8n}
+              disabled={isSendingToN8n || !webhookUrl || results.length === 0}
+              className="w-full flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-pink-500/90 to-purple-500/90 hover:from-pink-500 hover:to-purple-500 disabled:from-gray-600 disabled:to-gray-700 disabled:cursor-not-allowed transition-all duration-300 border border-pink-500/50"
+            >
+              {isSendingToN8n ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  Sending to n8n...
+                </>
+              ) : (
+                <>
+                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/>
+                  </svg>
+                  Send All to n8n
+                </>
+              )}
+            </button>
           </div>
         </div>
 
@@ -143,7 +289,7 @@ export default function ScraperView() {
               {results.length > 0 ? (
                 results.map((lead, i) => (
                   <motion.tr
-                    key={lead.id}
+                    key={lead._id}
                     initial={{ opacity: 0, x: -20 }}
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ delay: i * 0.05 }}

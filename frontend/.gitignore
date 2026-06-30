@@ -1,0 +1,26 @@
+<<<<<<< HEAD
+node_modules
+**/node_modules/
+=======
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Environment variables
+.env
+**/.env
+!**/.env.example
+
+# Build output
+dist/
+build/
+.next/
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+>>>>>>> 9f3df6bc06f1bef3e1a5b8a33699110f1504e642

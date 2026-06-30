@@ -1,116 +1,274 @@
-
-import { useState } from "react";
-import { motion, AnimatePresence } from "motion/react";
-import { Zap, Download, Send } from "lucide-react";
-import { cn, GlowButton, GlassCard } from "../../utils/helpers";
-import { LEADS } from "../../data/constants";
+import { useState, useEffect } from "react";
+import { Folder, FileText, Download, CheckCircle, ArrowLeft, RefreshCw } from "lucide-react";
 import { scraperAPI } from "../../services/api";
+import { GlowButton, GlassCard } from "../../utils/helpers";
 
 export default function AuditView() {
-  const [generating, setGenerating] = useState(false);
-  const [generated, setGenerated] = useState(false);
-  const [selectedLead, setSelectedLead] = useState(LEADS[0]);
-  const [auditResult, setAuditResult] = useState(null);
-  
-  const handleGenerate = async () => {
-    setGenerating(true);
-    setGenerated(false);
+  const [loading, setLoading] = useState(true);
+  const [groupedLeads, setGroupedLeads] = useState({});
+  const [selectedType, setSelectedType] = useState(null);
+  const [selectedLead, setSelectedLead] = useState(null);
+  const [selectedAudit, setSelectedAudit] = useState(null);
+  const [auditLoading, setAuditLoading] = useState(false);
+
+  // Load grouped leads on mount
+  useEffect(() => {
+    loadGroupedLeads();
+  }, []);
+
+  const loadGroupedLeads = async () => {
     try {
-      const response = await scraperAPI.auditWebsite(selectedLead.site);
-      const audit = response.data.audit;
-      const overallScore = Math.floor((audit.speed + audit.seo + audit.mobile + audit.security) / 4);
-      const transformedAuditData = [
-        { label: "PageSpeed (Mobile)", score: audit.speed, max: 100, color: audit.speed >= 80 ? "bg-green-500" : audit.speed >= 60 ? "bg-yellow-500" : "bg-red-500", issue: audit.issues[0] },
-        { label: "SEO Score", score: audit.seo, max: 100, color: audit.seo >= 80 ? "bg-green-500" : audit.seo >= 60 ? "bg-yellow-500" : "bg-red-500", issue: audit.issues[1] },
-        { label: "Mobile Friendly", score: audit.mobile, max: 100, color: audit.mobile >= 80 ? "bg-green-500" : audit.mobile >= 60 ? "bg-yellow-500" : "bg-red-500", issue: audit.issues[2] },
-        { label: "Security (HTTPS)", score: audit.security, max: 100, color: audit.security >= 80 ? "bg-green-500" : audit.security >= 60 ? "bg-yellow-500" : "bg-red-500", issue: audit.issues[3] },
-        { label: "Core Web Vitals", score: overallScore, max: 100, color: overallScore >= 80 ? "bg-green-500" : overallScore >= 60 ? "bg-yellow-500" : "bg-red-500", issue: audit.recommendations[0] },
-        { label: "Broken Links", score: 70, max: 100, color: "bg-yellow-500", issue: audit.recommendations[1] },
-      ];
-      setAuditResult({ ...audit, auditData: transformedAuditData, overallScore });
-      setGenerating(false);
-      setGenerated(true);
-    } catch (error) {
-      console.error(error);
-      setGenerating(false);
+      const res = await scraperAPI.getGroupedAudits();
+      setGroupedLeads(res.data.groupedLeads);
+      setLoading(false);
+    } catch (err) {
+      console.error("Failed to load grouped leads", err);
+      setLoading(false);
     }
   };
 
+  const checkAndSetAudit = async (lead) => {
+    if (!lead.site || lead.site === "N/A") {
+      setSelectedLead(lead);
+      setSelectedAudit(null);
+      return;
+    }
+    setAuditLoading(true);
+    try {
+      const res = await scraperAPI.getAuditByLead(lead._id);
+      if (res.data.exists) {
+        // Audit already exists, show it immediately
+        setSelectedAudit(res.data.audit);
+      } else {
+        // No audit exists yet, just show the lead without audit
+        setSelectedAudit(null);
+      }
+      setSelectedLead(lead);
+    } catch (err) {
+      console.error("Failed to check audit", err);
+      setSelectedLead(lead);
+      setSelectedAudit(null);
+    } finally {
+      setAuditLoading(false);
+    }
+  };
+
+  const handleRunAudit = async (lead) => {
+    if (!lead.site || lead.site === "N/A") {
+      alert("This lead has no website to audit!");
+      return;
+    }
+    setAuditLoading(true);
+    try {
+      const res = await scraperAPI.auditWebsite(lead.site, lead._id);
+      setSelectedAudit(res.data.audit);
+      setSelectedLead(lead);
+    } catch (err) {
+      console.error("Failed to run audit", err);
+      alert("Failed to run audit!");
+    } finally {
+      setAuditLoading(false);
+    }
+  };
+
+  // PDF download using jsPDF-like approach (simple one!)
+  const downloadPDF = (audit, lead) => {
+    const content = `
+WEBSITE AUDIT REPORT
+=====================
+Business: ${lead.name}
+Website: ${audit.site}
+Date: ${new Date(audit.createdAt).toLocaleDateString()}
+
+SCORES
+======
+Speed: ${audit.speed}/100
+SEO: ${audit.seo}/100
+Mobile: ${audit.mobile}/100
+Security: ${audit.security}/100
+
+ISSUES FOUND
+============
+${audit.issues.map((issue, i) => `${i+1}. ${issue}`).join('\n')}
+
+RECOMMENDATIONS
+===============
+${audit.recommendations.map((rec, i) => `${i+1}. ${rec}`).join('\n')}
+    `.trim();
+
+    const blob = new Blob([content], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${lead.name.replace(/\s+/g, '_')}_Audit_Report.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-[calc(100vh-64px)]">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-purple-500"></div>
+      </div>
+    );
+  }
+
+  // Folder view (default)
+  if (!selectedType && !selectedLead && !selectedAudit) {
+    const types = Object.keys(groupedLeads);
+    return (
+      <div className="p-6 space-y-6">
+        <h1 className="text-2xl font-bold text-white">Audit Dashboard</h1>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+          {types.length === 0 ? (
+            <p className="text-white/50 col-span-full text-center py-12">No leads found! Scrape some first!</p>
+          ) : (
+            types.map((type) => (
+              <GlassCard key={type} className="p-6 cursor-pointer hover:border-purple-500/50 transition-all" onClick={() => setSelectedType(type)}>
+                <Folder className="w-12 h-12 text-purple-400 mb-3" />
+                <h3 className="text-lg font-semibold text-white">{type}</h3>
+                <p className="text-sm text-white/50">{groupedLeads[type].length} businesses</p>
+              </GlassCard>
+            ))
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // Leads in folder view
+  if (selectedType && !selectedLead && !selectedAudit) {
+    const leads = groupedLeads[selectedType] || [];
+    return (
+      <div className="p-6 space-y-6">
+        <div className="flex items-center gap-4">
+          <GlowButton variant="ghost" onClick={() => setSelectedType(null)} className="flex items-center gap-2">
+            <ArrowLeft className="w-4 h-4" />
+            Back
+          </GlowButton>
+          <h1 className="text-2xl font-bold text-white">{selectedType}</h1>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {leads.map((lead) => (
+            <GlassCard key={lead._id} className="p-6 cursor-pointer hover:border-purple-500/50 transition-all" onClick={() => checkAndSetAudit(lead)}>
+              <FileText className="w-10 h-10 text-purple-400 mb-2" />
+              <h3 className="text-lg font-semibold text-white truncate">{lead.name}</h3>
+              <p className="text-sm text-white/50 truncate">{lead.location}</p>
+              <p className="text-xs text-white/30 truncate mt-1">{lead.site || "No website"}</p>
+            </GlassCard>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // Single lead + audit view
   return (
     <div className="p-6 space-y-6">
-      <div>
-        <h1 className="text-xl font-bold text-white" style={{ fontFamily: "Orbitron, sans-serif" }}>Website Audit Engine</h1>
-        <p className="text-sm text-white/40 mt-0.5">Generate a 12-point AI audit report for any lead</p>
-      </div>
-      <GlassCard className="p-5">
-        <div className="grid sm:grid-cols-3 gap-4 mb-5">
-          <div className="sm:col-span-2">
-            <label className="text-xs text-white/50 mb-1.5 block">Select Lead</label>
-            <select value={selectedLead.id} onChange={e => setSelectedLead(LEADS.find(l => l.id === +e.target.value) || LEADS[0])}
-              className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-white text-sm outline-none focus:border-purple-500/50">
-              {LEADS.map(l => <option key={l.id} value={l.id} style={{ background: "#0D1235" }}>{l.name} — {l.site}</option>)}
-            </select>
-          </div>
-          <div className="flex items-end">
-            <GlowButton onClick={handleGenerate} disabled={generating} className="w-full justify-center">
-              {generating ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full" style={{ animation: "spin 0.8s linear infinite" }} /> Analyzing...</>
-                : <><Zap className="w-4 h-4" /> Generate Audit</>}
-            </GlowButton>
-          </div>
+      <div className="flex items-center gap-4">
+        <GlowButton variant="ghost" onClick={() => {
+          if (selectedAudit) {
+            setSelectedAudit(null);
+          } else {
+            setSelectedLead(null);
+          }
+        }} className="flex items-center gap-2">
+          <ArrowLeft className="w-4 h-4" />
+          Back
+        </GlowButton>
+        <div>
+          <h1 className="text-2xl font-bold text-white">{selectedLead.name}</h1>
+          <p className="text-sm text-white/50">{selectedLead.location}</p>
         </div>
-        {generating && (
-          <div className="space-y-2">
-            {["Scanning website structure...", "Analyzing page speed...", "Checking SEO signals...", "Running security audit..."].map((msg, i) => (
-              <motion.div key={i} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.5 }}
-                className="flex items-center gap-2 text-xs text-white/50">
-                <div className="w-1.5 h-1.5 rounded-full bg-purple-400" style={{ animation: "blink 0.8s ease infinite" }} />
-                {msg}
-              </motion.div>
-            ))}
-          </div>
-        )}
-      </GlassCard>
-      <AnimatePresence>
-        {generated && auditResult && (
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-5">
-            <GlassCard className="p-5 border-purple-500/30 shadow-[0_0_30px_rgba(124,58,237,0.15)]">
-              <div className="flex items-start justify-between mb-5 flex-wrap gap-4">
-                <div>
-                  <div className="text-xs text-purple-400 font-mono mb-1">AUDIT REPORT</div>
-                  <h2 className="text-lg font-bold text-white">{selectedLead.name}</h2>
-                  <a href="#" className="text-xs text-cyan-400">{selectedLead.site}</a>
-                </div>
-                <div className="text-center">
-                  <div className="text-4xl font-black font-mono text-red-400">{auditResult.overallScore}</div>
-                  <div className="text-xs text-white/40">Overall Score</div>
-                  <div className="text-xs text-red-400 font-semibold mt-0.5">
-                    {auditResult.overallScore >= 80 ? "Excellent" : auditResult.overallScore >= 60 ? "Needs Work" : "Needs Urgent Work"}
+      </div>
+
+      {auditLoading ? (
+        <GlassCard className="p-8 text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-purple-500 mx-auto mb-4"></div>
+          <h3 className="text-xl font-semibold text-white">Loading...</h3>
+        </GlassCard>
+      ) : !selectedAudit ? (
+        <GlassCard className="p-8 text-center">
+          <FileText className="w-16 h-16 text-purple-400 mx-auto mb-4" />
+          <h3 className="text-xl font-semibold text-white mb-2">Ready to Audit</h3>
+          <p className="text-white/50 mb-6">Website: {selectedLead.site || "N/A"}</p>
+          <GlowButton onClick={() => handleRunAudit(selectedLead)} disabled={auditLoading || !selectedLead.site || selectedLead.site === "N/A"}>
+            {auditLoading ? (
+              <>
+                <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                Running Audit...
+              </>
+            ) : (
+              "Run Website Audit"
+            )}
+          </GlowButton>
+        </GlassCard>
+      ) : (
+        <div className="space-y-6">
+          <GlassCard className="p-6">
+            <div className="flex justify-between items-start mb-6">
+              <div>
+                <h3 className="text-xl font-semibold text-white mb-1">Audit Results</h3>
+                <p className="text-sm text-white/50">Generated {new Date(selectedAudit.createdAt).toLocaleString()}</p>
+              </div>
+              <GlowButton onClick={() => downloadPDF(selectedAudit, selectedLead)} className="flex items-center gap-2">
+                <Download className="w-4 h-4" />
+                Download Report
+              </GlowButton>
+            </div>
+
+            {/* Scores */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+              {[
+                { label: "Speed", value: selectedAudit.speed, color: "from-blue-500 to-cyan-500" },
+                { label: "SEO", value: selectedAudit.seo, color: "from-green-500 to-emerald-500" },
+                { label: "Mobile", value: selectedAudit.mobile, color: "from-purple-500 to-violet-500" },
+                { label: "Security", value: selectedAudit.security, color: "from-orange-500 to-red-500" },
+              ].map((score) => (
+                <div key={score.label} className="p-4 rounded-xl bg-white/5 border border-white/10">
+                  <p className="text-white/50 text-sm mb-2">{score.label}</p>
+                  <div className="text-3xl font-bold text-white">{score.value}<span className="text-lg text-white/50">/100</span></div>
+                  <div className="mt-2 h-2 rounded-full bg-white/10 overflow-hidden">
+                    <div className={`h-full bg-gradient-to-r ${score.color}`} style={{ width: `${score.value}%` }} />
                   </div>
                 </div>
-              </div>
-              <div className="space-y-4">
-                {auditResult.auditData.map((item, i) => (
-                  <motion.div key={i} initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.08 }}>
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-sm text-white/80">{item.label}</span>
-                      <span className="text-sm font-mono font-bold text-white">{item.score}/100</span>
-                    </div>
-                    <div className="h-2 bg-white/5 rounded-full overflow-hidden">
-                      <motion.div initial={{ width: 0 }} animate={{ width: `${item.score}%` }} transition={{ duration: 0.8, delay: i * 0.1 }}
-                        className={cn("h-full rounded-full", item.color)} />
-                    </div>
-                    <p className="text-xs text-white/40 mt-1">{item.issue}</p>
-                  </motion.div>
+              ))}
+            </div>
+
+            {/* Issues */}
+            <div className="mb-8">
+              <h4 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                <CheckCircle className="w-5 h-5 text-amber-400" />
+                Issues Found
+              </h4>
+              <div className="space-y-2">
+                {selectedAudit.issues.map((issue, i) => (
+                  <div key={i} className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-200 text-sm">
+                    {issue}
+                  </div>
                 ))}
               </div>
-              <div className="flex gap-3 mt-6">
-                <GlowButton className="flex-1 justify-center"><Download className="w-4 h-4" /> Download PDF</GlowButton>
-                <GlowButton variant="cyan" className="flex-1 justify-center"><Send className="w-4 h-4" /> Send to Lead</GlowButton>
+            </div>
+
+            {/* Recommendations */}
+            <div>
+              <h4 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                <CheckCircle className="w-5 h-5 text-cyan-400" />
+                Recommendations
+              </h4>
+              <div className="space-y-2">
+                {selectedAudit.recommendations.map((rec, i) => (
+                  <div key={i} className="p-3 rounded-lg bg-cyan-500/10 border border-cyan-500/20 text-cyan-200 text-sm">
+                    {rec}
+                  </div>
+                ))}
               </div>
-            </GlassCard>
-          </motion.div>
-        )}
-      </AnimatePresence>
+            </div>
+          </GlassCard>
+        </div>
+      )}
     </div>
   );
 }

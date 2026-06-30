@@ -32,10 +32,26 @@ export default function LeadsView({ setView }) {
     setFinding(true);
     setFound(false);
     try {
-      const response = await scraperAPI.scrapeLeads("restaurant", "New York");
-      console.log("Leads scraperAPI response:", response);
-      const scrapedLeads = response.data.leads;
-      setLeads(prev => [...scrapedLeads, ...prev]);
+      // Get scraped leads (isInLeads: false)
+      const scrapedResponse = await leadsAPI.getScrapedLeads();
+      const scrapedLeads = scrapedResponse.data.leads;
+      
+      if (scrapedLeads.length === 0) {
+        alert("No scraped leads available! Please scrape some leads first from the Scraper page.");
+        setFinding(false);
+        return;
+      }
+
+      // Take up to 10 leads
+      const leadsToMove = scrapedLeads.slice(0, 10).map(lead => lead._id);
+      
+      // Move them to active leads
+      await leadsAPI.moveToLeads(leadsToMove);
+      
+      // Refresh the leads list
+      const response = await leadsAPI.getLeads();
+      setLeads(response.data.leads);
+      
       setFinding(false);
       setFound(true);
       setTimeout(() => setFound(false), 3000);

@@ -300,3 +300,29 @@ exports.updateLeadFromN8N = async (req, res) => {
     res.status(500).json({ status: 'error', message: 'Failed to update lead' });
   }
 };
+
+// @desc    Clear all saved scraped leads for user
+// @route   DELETE /api/scraper/clear
+// @access  Private
+exports.clearSavedLeads = async (req, res) => {
+  try {
+    console.log('=== /api/scraper/clear called ===');
+    console.log('Clearing leads for user:', req.user._id);
+
+    // Delete all leads for this user that are not in active leads (isInLeads: false)
+    const result = await Lead.deleteMany({ user: req.user._id, isInLeads: false });
+    console.log('Deleted leads:', result.deletedCount);
+
+    res.status(200).json({
+      status: 'success',
+      message: `Cleared ${result.deletedCount} saved leads`,
+      data: { deletedCount: result.deletedCount }
+    });
+  } catch (error) {
+    console.error('Clear error:', error);
+    res.status(500).json({
+      status: 'error',
+      message: 'Failed to clear leads: ' + error.message
+    });
+  }
+};

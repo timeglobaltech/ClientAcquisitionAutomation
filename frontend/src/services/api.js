@@ -48,6 +48,11 @@ export const authAPI = {
 // Leads API
 export const leadsAPI = {
   getLeads: () => apiRequest('/leads'),
+  getScrapedLeads: () => apiRequest('/leads/scraped'),
+  moveToLeads: (leadIds) => apiRequest('/leads/move', {
+    method: 'POST',
+    body: JSON.stringify({ leadIds }),
+  }),
   createLead: (leadData) => apiRequest('/leads', {
     method: 'POST',
     body: JSON.stringify(leadData),
@@ -63,13 +68,37 @@ export const leadsAPI = {
 
 // Scraper API
 export const scraperAPI = {
-  scrapeLeads: (query, location) => apiRequest('/scraper/scrape', {
+  scrapeLeads: (query, location, webhookUrl) => apiRequest('/scraper/scrape', {
     method: 'POST',
-    body: JSON.stringify({ query, location }),
+    body: JSON.stringify({ query, location, webhookUrl }),
   }),
-  auditWebsite: (site) => apiRequest('/scraper/audit', {
+  auditWebsite: (site, leadId) => apiRequest('/scraper/audit', {
     method: 'POST',
-    body: JSON.stringify({ site }),
+    body: JSON.stringify({ site, leadId }),
+  }),
+  getUserAudits: () => apiRequest('/scraper/audits'),
+  getAuditById: (id) => apiRequest(`/scraper/audits/${id}`),
+  getGroupedAudits: () => apiRequest('/scraper/audits/grouped'),
+  getAuditByLead: (leadId) => apiRequest(`/scraper/audits/lead/${leadId}`)
+};
+
+// AI API
+export const aiAPI = {
+  chatWithAI: (messages) => apiRequest('/ai/chat', {
+    method: 'POST',
+    body: JSON.stringify({ messages }),
+  }),
+  getChats: () => apiRequest('/ai/chats'),
+  createChat: (chatData) => apiRequest('/ai/chats', {
+    method: 'POST',
+    body: JSON.stringify(chatData),
+  }),
+  updateChat: (id, chatData) => apiRequest(`/ai/chats/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(chatData),
+  }),
+  deleteChat: (id) => apiRequest(`/ai/chats/${id}`, {
+    method: 'DELETE',
   }),
 };
 

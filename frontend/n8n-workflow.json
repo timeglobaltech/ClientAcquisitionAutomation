@@ -1,0 +1,266 @@
+
+{
+  "name": "Client Acquisition Automation",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "lead-scraper",
+        "responseMode": "onReceived"
+      },
+      "id": "webhook-1",
+      "name": "Receive Scraped Leads",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 3,
+      "position": [300, 300]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "BACKEND_URL",
+              "value": "http://localhost:5000/api/scraper/update-lead"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "code-1",
+      "name": "Define Constants",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [520, 300]
+    },
+    {
+      "parameters": {},
+      "id": "splitInBatches-1",
+      "name": "Loop Through Leads",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [740, 300]
+    },
+    {
+      "parameters": {
+        "fromEmail": "you@yourcompany.com",
+        "toEmail": "={{ $json.item.email }}",
+        "subject": "Hi {{ $json.item.name }} - Website Audit",
+        "emailType": "html",
+        "message": "=Dear {{ $json.item.name }},<br><br>I noticed your website {{ $json.item.site }} could use some improvements. We've prepared an audit for you!<br><br>Would you be interested in a free consultation?<br><br>Best regards,<br>Your Name"
+      },
+      "id": "sendEmail-1",
+      "name": "Send Initial Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 3,
+      "position": [960, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.BACKEND_URL }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "id",
+              "value": "={{ $json.item.id }}"
+            },
+            {
+              "name": "status",
+              "value": "Hot"
+            },
+            {
+              "name": "followUpSent",
+              "value": "true"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "httpRequest-1",
+      "name": "Update Lead (Email Sent)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1180, 200]
+    },
+    {
+      "parameters": {
+        "interval": 2,
+        "unit": "days"
+      },
+      "id": "wait-1",
+      "name": "Wait 2 Days",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 2.3,
+      "position": [960, 400]
+    },
+    {
+      "parameters": {
+        "fromEmail": "you@yourcompany.com",
+        "toEmail": "={{ $json.item.email }}",
+        "subject": "Just following up - {{ $json.item.name }}",
+        "emailType": "html",
+        "message": "=Hi {{ $json.item.name }},<br><br>Just following up on my previous email about your website {{ $json.item.site }}.<br><br>Let me know if you're interested in hearing more!<br><br>Best,<br>Your Name"
+      },
+      "id": "sendEmail-2",
+      "name": "Send Follow-Up",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 3,
+      "position": [1180, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.BACKEND_URL }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "id",
+              "value": "={{ $json.item.id }}"
+            },
+            {
+              "name": "status",
+              "value": "Warm"
+            },
+            {
+              "name": "response",
+              "value": "Follow-up sent"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "httpRequest-2",
+      "name": "Update Lead (Follow-Up)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1400, 400]
+    },
+    {
+      "parameters": {},
+      "id": "merge-1",
+      "name": "Merge Results",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.4,
+      "position": [1400, 600]
+    }
+  ],
+  "connections": {
+    "Receive Scraped Leads": {
+      "main": [
+        [
+          {
+            "node": "Define Constants",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Define Constants": {
+      "main": [
+        [
+          {
+            "node": "Loop Through Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Through Leads": {
+      "main": [
+        [
+          {
+            "node": "Send Initial Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Initial Email": {
+      "main": [
+        [
+          {
+            "node": "Update Lead (Email Sent)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Lead (Email Sent)": {
+      "main": [
+        [
+          {
+            "node": "Wait 2 Days",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 2 Days": {
+      "main": [
+        [
+          {
+            "node": "Send Follow-Up",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Follow-Up": {
+      "main": [
+        [
+          {
+            "node": "Update Lead (Follow-Up)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Lead (Follow-Up)": {
+      "main": [
+        [
+          {
+            "node": "Merge Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2026-06-24T12:00:00.000Z",
+  "versionId": "1"
+}
