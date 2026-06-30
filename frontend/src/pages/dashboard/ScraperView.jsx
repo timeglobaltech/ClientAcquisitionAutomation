@@ -1,49 +1,85 @@
 import { useState, useEffect } from "react";
-import { Search, Filter, Download, CheckCircle, Globe, MapPin, Phone, Mail, Check, Link2 } from "lucide-react";
+import { Search, Filter, Download, CheckCircle, Globe, MapPin, Phone, Mail, Check, Link2, RefreshCw, Trash2 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { GlowButton, GlassCard } from "../../utils/helpers";
 import { scraperAPI, leadsAPI } from "../../services/api";
-
-const mockScraperResults = [
-  { id: 1, name: "Marco's Italian Kitchen", type: "Restaurant", location: "New York, NY", phone: "+1 212 555 0142", email: "marco@marcoskitchen.com", website: "marcoskitchen.com", rating: 4.5, reviews: 234 },
-  { id: 2, name: "FitZone Gym", type: "Gym", location: "Austin, TX", phone: "+1 512 555 0198", email: "info@fitzonegym.io", website: "fitzonegym.io", rating: 4.7, reviews: 156 },
-  { id: 3, name: "Apex Digital Agency", type: "Agency", location: "Chicago, IL", phone: "+1 312 555 0074", email: "hello@apexdigital.co", website: "apexdigital.co", rating: 4.8, reviews: 89 },
-];
 
 export default function ScraperView() {
   const [searchQuery, setSearchQuery] = useState("gym");
   const [location, setLocation] = useState("New York");
   const [isScraping, setIsScraping] = useState(false);
   const [isSendingToN8n, setIsSendingToN8n] = useState(false);
-  const [results, setResults] = useState([]);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isClearing, setIsClearing] = useState(false);
+  const [allResults, setAllResults] = useState([]);
+  const [showAll, setShowAll] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
+  const [showLoadSuccess, setShowLoadSuccess] = useState(false);
+  const [showClearSuccess, setShowClearSuccess] = useState(false);
   const [dataSource, setDataSource] = useState('');
   const [addedLeadIds, setAddedLeadIds] = useState(new Set());
   const [webhookUrl, setWebhookUrl] = useState(() => {
     return localStorage.getItem('n8n_webhook_url') || '';
   });
 
-  // Load previously saved scraped leads on component mount
-  useEffect(() => {
-    const loadSavedScrapedLeads = async () => {
-      try {
-        const response = await leadsAPI.getScrapedLeads();
-        if (response.data.leads.length > 0) {
-          setResults(response.data.leads);
-          // Check which leads are already added (isInLeads: true)
-          const addedIds = new Set();
-          response.data.leads.forEach(lead => {
-            if (lead.isInLeads) {
-              addedIds.add(lead._id);
-            }
-          });
-          setAddedLeadIds(addedIds);
+  // Visible results: first 20 or all
+  const results = showAll ? allResults : allResults.slice(0, 20);
+
+  // Load saved leads from database
+  const loadSavedLeads = async () => {
+    setIsRefreshing(true);
+    try {
+      console.log("🔄 Loading saved leads from database...");
+      const response = await leadsAPI.getScrapedLeads();
+      console.log("✅ API response received:", response);
+
+      const loadedLeads = response.data.leads || [];
+      console.log("📋 Loaded leads:", loadedLeads);
+
+      setAllResults(loadedLeads);
+
+      // Update added lead IDs
+      const newAddedIds = new Set();
+      loadedLeads.forEach(lead => {
+        if (lead.isInLeads) {
+          newAddedIds.add(lead._id);
         }
-      } catch (error) {
-        console.error("Error loading saved scraped leads:", error);
-      }
-    };
-    loadSavedScrapedLeads();
+      });
+      setAddedLeadIds(newAddedIds);
+
+      setShowLoadSuccess(true);
+      setTimeout(() => setShowLoadSuccess(false), 3000);
+    } catch (error) {
+      console.error("❌ Error loading saved scraped leads:", error);
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
+  // Clear all saved leads
+  const clearSavedLeads = async () => {
+    if (!window.confirm("Are you sure you want to clear all saved scraped leads? This cannot be undone.")) {
+      return;
+    }
+    setIsClearing(true);
+    try {
+      const response = await scraperAPI.clearSavedLeads();
+      console.log("✅ Cleared leads:", response);
+      setAllResults([]);
+      setAddedLeadIds(new Set());
+      setShowClearSuccess(true);
+      setTimeout(() => setShowClearSuccess(false), 3000);
+    } catch (error) {
+      console.error("❌ Error clearing leads:", error);
+      alert("Failed to clear leads: " + (error.message || "Unknown error"));
+    } finally {
+      setIsClearing(false);
+    }
+  };
+
+  // Load saved leads on mount
+  useEffect(() => {
+    loadSavedLeads();
   }, []);
 
   // Save webhook URL to localStorage when it changes
@@ -63,16 +99,20 @@ export default function ScraperView() {
   const handleScrape = async () => {
     setIsScraping(true);
     setShowSuccess(false);
-    setAddedLeadIds(new Set());
+    setShowLoadSuccess(false);
+    setShowAll(false);
     try {
+      console.log("🚀 Starting scrape...");
       const response = await scraperAPI.scrapeLeads(searchQuery, location, webhookUrl);
-      setResults(response.data.leads);
+      console.log("✅ Scrape successful:", response);
+      setAllResults(response.data.leads);
       setDataSource(response.data.source);
-      setIsScraping(false);
       setShowSuccess(true);
       setTimeout(() => setShowSuccess(false), 5000);
     } catch (error) {
-      console.error("Error scraping leads:", error);
+      console.error("❌ Error scraping:", error);
+      alert("Scraping failed: " + (error.message || "Unknown error"));
+    } finally {
       setIsScraping(false);
     }
   };
@@ -82,38 +122,36 @@ export default function ScraperView() {
       alert('Please enter an n8n webhook URL first!');
       return;
     }
-    
-    if (results.length === 0) {
+
+    if (allResults.length === 0) {
       alert('No leads to send! Please scrape some leads first.');
       return;
     }
 
     setIsSendingToN8n(true);
     try {
-      // Send directly to n8n from frontend
       const response = await fetch(webhookUrl, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           query: searchQuery,
           location: location,
-          leads: results,
+          leads: allResults,
           timestamp: new Date().toISOString()
         })
       });
-      
+
       if (response.ok) {
         alert('Leads sent to n8n successfully!');
       } else {
-        alert('Failed to send leads to n8n. Please check your webhook URL.');
+        alert('Failed to send leads to n8n!');
       }
     } catch (error) {
       console.error("Error sending to n8n:", error);
       alert('Error sending leads to n8n: ' + error.message);
+    } finally {
+      setIsSendingToN8n(false);
     }
-    setIsSendingToN8n(false);
   };
 
   return (
@@ -134,8 +172,7 @@ export default function ScraperView() {
         <h3 className="text-sm font-semibold mb-1">📊 How to get REAL Data:</h3>
         <ol className="text-xs space-y-1 text-amber-300/90">
           <li>1. Get a free API key from <a href="https://serpapi.com" target="_blank" rel="noopener noreferrer" className="underline hover:text-amber-200">serpapi.com</a></li>
-          <li>2. Open the <code className="bg-black/30 px-1.5 py-0.5 rounded text-xs">backend/.env</code> file and replace <code className="bg-black/30 px-1 py-0.5 rounded text-xs">your_serpapi_key_here</code> with your actual key</li>
-          <li>3. Restart your backend server</li>
+          <li>2. Open the <code className="bg-black/30 px-1.5 py-0.5 rounded text-xs">backend/.env</code> file and add your SERP_API_KEY</li>
         </ol>
       </div>
 
@@ -144,7 +181,21 @@ export default function ScraperView() {
           <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
             className="flex items-center gap-3 p-4 rounded-xl bg-green-500/10 border border-green-500/30 text-green-400">
             <CheckCircle className="w-5 h-5" />
-            <span className="text-sm font-semibold">{results.length} new leads scraped successfully from {dataSource}!</span>
+            <span className="text-sm font-semibold">{allResults.length} new leads scraped successfully from {dataSource}!</span>
+          </motion.div>
+        )}
+        {showLoadSuccess && (
+          <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+            className="flex items-center gap-3 p-4 rounded-xl bg-blue-500/10 border border-blue-500/30 text-blue-400">
+            <CheckCircle className="w-5 h-5" />
+            <span className="text-sm font-semibold">{allResults.length} saved leads loaded from database!</span>
+          </motion.div>
+        )}
+        {showClearSuccess && (
+          <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+            className="flex items-center gap-3 p-4 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400">
+            <CheckCircle className="w-5 h-5" />
+            <span className="text-sm font-semibold">All saved leads cleared successfully!</span>
           </motion.div>
         )}
       </AnimatePresence>
@@ -184,7 +235,7 @@ export default function ScraperView() {
           <div className="flex items-center gap-3 mb-4">
             <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-pink-500 to-purple-500 flex items-center justify-center">
               <svg className="w-5 h-5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M18 3v4m-4-4v4M6 21v-4m4 4v-4M6 7h12a2 2 0 012 2v8a2 2 0 01-2 2H6a2 2 0 01-2-2V9a2 2 0 012-2z"/>
+                <path d="M18 3v4m-4-4v4M6 21v-4m4 4v-4M6 7h12a2 2 0 012 2v8a2 2 0 01-2 2H6a2 2 0 01-2-2V9a2 2 0 012-2z" />
               </svg>
             </div>
             <div>
@@ -206,36 +257,9 @@ export default function ScraperView() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 gap-3">
-              <div className="bg-white/5 rounded-lg p-3 border border-white/10">
-                <div className="flex items-start gap-2">
-                  <CheckCircle className="w-4 h-4 text-cyan-400 mt-0.5 flex-shrink-0" />
-                  <div className="text-xs text-white/70">
-                    <span className="font-semibold text-white">Auto-sends</span> each scraped lead to n8n
-                  </div>
-                </div>
-              </div>
-              <div className="bg-white/5 rounded-lg p-3 border border-white/10">
-                <div className="flex items-start gap-2">
-                  <CheckCircle className="w-4 h-4 text-cyan-400 mt-0.5 flex-shrink-0" />
-                  <div className="text-xs text-white/70">
-                    <span className="font-semibold text-white">Triggers</span> your workflow with full contact data
-                  </div>
-                </div>
-              </div>
-              <div className="bg-white/5 rounded-lg p-3 border border-white/10">
-                <div className="flex items-start gap-2">
-                  <CheckCircle className="w-4 h-4 text-cyan-400 mt-0.5 flex-shrink-0" />
-                  <div className="text-xs text-white/70">
-                    <span className="font-semibold text-white">Connects</span> to CRM, Slack, Email, WhatsApp
-                  </div>
-                </div>
-              </div>
-            </div>
-
             <button
               onClick={sendToN8n}
-              disabled={isSendingToN8n || !webhookUrl || results.length === 0}
+              disabled={isSendingToN8n || !webhookUrl || allResults.length === 0}
               className="w-full flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-pink-500/90 to-purple-500/90 hover:from-pink-500 hover:to-purple-500 disabled:from-gray-600 disabled:to-gray-700 disabled:cursor-not-allowed transition-all duration-300 border border-pink-500/50"
             >
               {isSendingToN8n ? (
@@ -246,7 +270,7 @@ export default function ScraperView() {
               ) : (
                 <>
                   <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/>
+                    <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" />
                   </svg>
                   Send All to n8n
                 </>
@@ -261,6 +285,24 @@ export default function ScraperView() {
           </GlowButton>
           <GlowButton variant="ghost" className="text-xs py-1.5 px-3">
             <Download className="w-3.5 h-3.5 mr-1.5" /> Export to CSV
+          </GlowButton>
+          <GlowButton
+            variant="ghost"
+            className="text-xs py-1.5 px-3"
+            onClick={loadSavedLeads}
+            disabled={isRefreshing}
+          >
+            <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${isRefreshing ? 'animate-spin' : ''}`} />
+            {isRefreshing ? 'Refreshing...' : 'Refresh Saved Leads'}
+          </GlowButton>
+          <GlowButton
+            variant="ghost"
+            className="text-xs py-1.5 px-3 text-red-400 border-red-500/20"
+            onClick={clearSavedLeads}
+            disabled={isClearing}
+          >
+            <Trash2 className="w-3.5 h-3.5 mr-1.5" />
+            {isClearing ? 'Clearing...' : 'Clear All Saved Leads'}
           </GlowButton>
         </div>
 
@@ -289,7 +331,7 @@ export default function ScraperView() {
               {results.length > 0 ? (
                 results.map((lead, i) => (
                   <motion.tr
-                    key={lead._id}
+                    key={lead._id || lead.id || `lead-${i}`}
                     initial={{ opacity: 0, x: -20 }}
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ delay: i * 0.05 }}
@@ -324,8 +366,8 @@ export default function ScraperView() {
                           onClick={() => addToLeads(lead)}
                           disabled={addedLeadIds.has(lead._id || lead.id)}
                           className={`text-xs px-4 py-1.5 rounded-lg transition-colors flex items-center gap-1.5
-                            ${addedLeadIds.has(lead._id || lead.id) 
-                              ? 'bg-green-500/10 text-green-400 border border-green-500/20' 
+                            ${addedLeadIds.has(lead._id || lead.id)
+                              ? 'bg-green-500/10 text-green-400 border border-green-500/20'
                               : 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 hover:bg-cyan-500/20'}`}
                         >
                           {addedLeadIds.has(lead._id || lead.id) ? (
@@ -341,13 +383,31 @@ export default function ScraperView() {
               ) : (
                 <tr>
                   <td colSpan={7} className="py-12 text-center text-white/40 text-sm">
-                    No scraped leads yet. Start scraping to get results!
+                    No scraped leads yet. Start scraping or click "Refresh Saved Leads"!
                   </td>
                 </tr>
               )}
             </tbody>
           </table>
         </div>
+
+        {/* View All Button */}
+        {!showAll && allResults.length > 20 && (
+          <div className="text-center mt-6">
+            <GlowButton onClick={() => setShowAll(true)} className="justify-center">
+              View All {allResults.length} Leads
+            </GlowButton>
+          </div>
+        )}
+
+        {/* Show Less Button */}
+        {showAll && allResults.length > 20 && (
+          <div className="text-center mt-6">
+            <GlowButton variant="ghost" onClick={() => setShowAll(false)} className="justify-center">
+              Show Less
+            </GlowButton>
+          </div>
+        )}
       </GlassCard>
     </div>
   );
