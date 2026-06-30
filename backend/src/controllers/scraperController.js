@@ -227,9 +227,25 @@ exports.getAuditById = async (req, res) => {
   }
 };
 
+// @desc    Get audit for a specific lead
+// @route   GET /api/scraper/audits/lead/:leadId
+// @access   Private
+exports.getAuditByLead = async (req, res) => {
+  try {
+    const audit = await Audit.findOne({ user: req.user._id, lead: req.params.leadId });
+    res.status(200).json({
+      status: 'success',
+      data: { audit, exists: !!audit }
+    });
+  } catch (error) {
+    console.error('Get audit by lead error:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to get audit' });
+  }
+};
+
 // @desc    Get audits grouped by lead type (for folders)
 // @route   GET /api/scraper/audits/grouped
-// @access  Private
+// @access   Private
 exports.getGroupedAudits = async (req, res) => {
   try {
     // Get all leads for user first
