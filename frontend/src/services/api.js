@@ -43,6 +43,14 @@ export const authAPI = {
     body: JSON.stringify(credentials),
   }),
   getMe: () => apiRequest('/auth/me'),
+  updateProfile: (data) => apiRequest('/auth/update-profile', {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  }),
+  updatePassword: (data) => apiRequest('/auth/update-password', {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  }),
 };
 
 // Leads API
@@ -83,6 +91,27 @@ export const scraperAPI = {
   clearSavedLeads: () => apiRequest('/scraper/clear', {
     method: 'DELETE',
   }),
+};
+
+// Meetings API
+export const meetingsAPI = {
+  getMeetings: () => apiRequest('/meetings'),
+  createMeeting: (data) => apiRequest('/meetings', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  }),
+  updateMeeting: (id, data) => apiRequest(`/meetings/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  }),
+  deleteMeeting: (id) => apiRequest(`/meetings/${id}`, {
+    method: 'DELETE',
+  }),
+};
+
+// Analytics API
+export const analyticsAPI = {
+  getStats: () => apiRequest('/analytics/stats'),
 };
 
 // AI API

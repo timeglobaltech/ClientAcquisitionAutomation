@@ -1,27 +1,49 @@
-
 import { useState } from "react";
 import { motion } from "motion/react";
-import { Bot, ArrowLeft, Eye, EyeOff } from "lucide-react";
+import { Bot, ArrowLeft, Eye, EyeOff, AlertCircle } from "lucide-react";
 import { GlowButton, GlassCard } from "../../utils/helpers";
 import { useAuth } from "../../contexts/AuthContext";
 
 export default function RegisterPage({ onBack, onSwitchToLogin }) {
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
+  const [name,     setName]     = useState("");
+  const [email,    setEmail]    = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [clientError,  setClientError]  = useState("");
   const { register } = useAuth();
+
+  // Client-side Gmail check before hitting backend
+  const validateEmail = (val) => {
+    if (!val) return "";
+    if (!val.toLowerCase().endsWith("@gmail.com")) {
+      return "Only Gmail addresses (@gmail.com) are allowed.";
+    }
+    return "";
+  };
+
+  const handleEmailChange = (e) => {
+    setEmail(e.target.value);
+    setClientError(validateEmail(e.target.value));
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setIsSubmitting(true);
-    const result = await register({ name, email, password });
-    setIsSubmitting(false);
-    if (result.success) {
-      onBack();
+    const err = validateEmail(email);
+    if (err) { setClientError(err); return; }
+    if (password.length < 6) {
+      setClientError("Password must be at least 6 characters.");
+      return;
     }
+    setClientError("");
+    setIsSubmitting(true);
+    const result = await register({ name, email: email.toLowerCase().trim(), password });
+    setIsSubmitting(false);
+    if (result.success) onBack();
+    // Error toast is shown by AuthContext via sonner
   };
+
+  const isGmailOk = email.toLowerCase().endsWith("@gmail.com");
 
   return (
     <div className="min-h-screen bg-[#0A0E27] flex items-center justify-center p-4">
@@ -41,6 +63,7 @@ export default function RegisterPage({ onBack, onSwitchToLogin }) {
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-5">
+            {/* Name */}
             <div>
               <label className="text-xs text-white/50 mb-2 block">Full Name</label>
               <input
@@ -53,18 +76,39 @@ export default function RegisterPage({ onBack, onSwitchToLogin }) {
               />
             </div>
 
+            {/* Email — Gmail only */}
             <div>
-              <label className="text-xs text-white/50 mb-2 block">Email</label>
+              <label className="text-xs text-white/50 mb-2 block">
+                Gmail Address
+                <span className="ml-2 text-purple-400/70">(@gmail.com only)</span>
+              </label>
               <input
                 type="email"
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                onChange={handleEmailChange}
                 required
-                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white text-sm placeholder-white/30 focus:border-purple-500/50 focus:outline-none transition-colors"
-                placeholder="you@example.com"
+                className={`w-full bg-white/5 border rounded-xl px-4 py-3 text-white text-sm placeholder-white/30 focus:outline-none transition-colors ${
+                  email && !isGmailOk
+                    ? "border-red-500/60 focus:border-red-500/80"
+                    : isGmailOk
+                    ? "border-green-500/40 focus:border-green-500/60"
+                    : "border-white/10 focus:border-purple-500/50"
+                }`}
+                placeholder="yourname@gmail.com"
               />
+              {/* Inline hint */}
+              {email && !isGmailOk && (
+                <p className="mt-1.5 text-xs text-red-400 flex items-center gap-1">
+                  <AlertCircle className="w-3 h-3 shrink-0" />
+                  Only @gmail.com addresses are accepted
+                </p>
+              )}
+              {isGmailOk && (
+                <p className="mt-1.5 text-xs text-green-400">✓ Valid Gmail address</p>
+              )}
             </div>
 
+            {/* Password */}
             <div>
               <label className="text-xs text-white/50 mb-2 block">Password</label>
               <div className="relative">
@@ -73,8 +117,9 @@ export default function RegisterPage({ onBack, onSwitchToLogin }) {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
+                  minLength={6}
                   className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white text-sm placeholder-white/30 focus:border-purple-500/50 focus:outline-none transition-colors pr-10"
-                  placeholder="••••••••"
+                  placeholder="Min 6 characters"
                 />
                 <button
                   type="button"
@@ -86,8 +131,20 @@ export default function RegisterPage({ onBack, onSwitchToLogin }) {
               </div>
             </div>
 
-            <GlowButton type="submit" disabled={isSubmitting} className="w-full justify-center mt-2">
-              {isSubmitting ? "Creating account..." : "Create Account"}
+            {/* Client error */}
+            {clientError && (
+              <div className="flex items-center gap-2 text-xs text-red-400 bg-red-500/10 border border-red-500/30 rounded-xl px-3 py-2">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                {clientError}
+              </div>
+            )}
+
+            <GlowButton
+              type="submit"
+              disabled={isSubmitting || (email.length > 0 && !isGmailOk)}
+              className="w-full justify-center mt-2"
+            >
+              {isSubmitting ? "Creating account…" : "Create Account"}
             </GlowButton>
           </form>
 
@@ -104,4 +161,3 @@ export default function RegisterPage({ onBack, onSwitchToLogin }) {
     </div>
   );
 }
-

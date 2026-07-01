@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { Folder, FileText, Download, CheckCircle, ArrowLeft, RefreshCw } from "lucide-react";
 import { scraperAPI } from "../../services/api";
 import { GlowButton, GlassCard } from "../../utils/helpers";
+import { useDashboard } from "../../contexts/DashboardContext";
 
 export default function AuditView() {
   const [loading, setLoading] = useState(true);
@@ -10,6 +11,8 @@ export default function AuditView() {
   const [selectedLead, setSelectedLead] = useState(null);
   const [selectedAudit, setSelectedAudit] = useState(null);
   const [auditLoading, setAuditLoading] = useState(false);
+
+  const { refreshDashboard } = useDashboard();
 
   // Load grouped leads on mount
   useEffect(() => {
@@ -61,8 +64,27 @@ export default function AuditView() {
     setAuditLoading(true);
     try {
       const res = await scraperAPI.auditWebsite(lead.site, lead._id, forceRegenerate);
-      setSelectedAudit(res.data.audit);
-      setSelectedLead(lead);
+      const audit = res.data.audit;
+      setSelectedAudit(audit);
+
+      // Update lead score locally so Leads page reflects immediately
+      const overallScore = Math.round((audit.speed + audit.seo + audit.mobile + audit.security) / 4);
+      const newStatus    = overallScore >= 80 ? "Hot" : overallScore >= 60 ? "Warm" : "Cold";
+      setSelectedLead(prev => ({ ...prev, score: overallScore, status: newStatus, hasAudit: true }));
+
+      // Update the lead card in the folder view too
+      setGroupedLeads(prev => {
+        const updated = { ...prev };
+        if (updated[selectedType]) {
+          updated[selectedType] = updated[selectedType].map(l =>
+            l._id === lead._id ? { ...l, score: overallScore, status: newStatus, hasAudit: true } : l
+          );
+        }
+        return updated;
+      });
+
+      // Trigger dashboard re-fetch automatically — no manual refresh needed
+      refreshDashboard();
     } catch (err) {
       console.error("Failed to run audit", err);
       alert("Failed to run audit!");

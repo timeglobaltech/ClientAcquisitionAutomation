@@ -1,143 +1,354 @@
-
+import { useState, useEffect } from "react";
 import { motion } from "motion/react";
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import { Users, Mail, Calendar, DollarSign, RefreshCw, Send, Bot, MessageSquare, Eye } from "lucide-react";
-import { cn, StatCard, GlassCard, GlowButton, ScoreBadge } from "../../utils/helpers";
-import { KANBAN_STAGES, KANBAN_CARDS, REVENUE_DATA, LEADS } from "../../data/constants";
+import {
+  AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid,
+  Tooltip, ResponsiveContainer, PieChart, Pie, Cell,
+} from "recharts";
+import { Loader2, RefreshCw, Send } from "lucide-react";
+import { GlassCard, GlowButton } from "../../utils/helpers";
+import { leadsAPI, scraperAPI } from "../../services/api";
+import { useDashboard } from "../../contexts/DashboardContext";
+
+const TT = {
+  contentStyle: {
+    background: "#0D1235",
+    border: "1px solid rgba(124,58,237,0.3)",
+    borderRadius: 8,
+    color: "white",
+    fontSize: 13,
+    fontWeight: 600,
+  },
+  labelStyle: { color: "white" },
+  itemStyle: { color: "white" },
+};
+
+// Build last 8 month labels for chart
+function buildMonthlyBuckets() {
+  const buckets = [];
+  const now = new Date();
+  for (let i = 7; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    buckets.push({
+      year:   d.getFullYear(),
+      month:  d.getMonth(),
+      label:  d.toLocaleString("default", { month: "short" }),
+      leads:  0,
+      audits: 0,
+    });
+  }
+  return buckets;
+}
 
 export default function DashboardMainView({ setView }) {
-  const kpis = [
-    { label: "Leads This Week", value: "247", icon: Users, change: "+23% vs last week", color: "purple" },
-    { label: "Email Open Rate", value: "61.4%", icon: Mail, change: "+8.2% vs last week", color: "cyan" },
-    { label: "Meetings Booked", value: "23", icon: Calendar, change: "+5 vs last week", color: "green" },
-    { label: "Pipeline Revenue", value: "$84.2K", icon: DollarSign, change: "+$12K vs last week", color: "orange" },
+  const [leads, setLeads]     = useState([]);
+  const [audits, setAudits]   = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError]     = useState(null);
+
+  // Listen to global refreshKey — re-fetch whenever any audit completes
+  const { refreshKey } = useDashboard();
+
+  const fetchData = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      // Same APIs that LeadsView and AuditView use
+      const [leadsRes, auditsRes] = await Promise.all([
+        leadsAPI.getLeads(),
+        scraperAPI.getUserAudits(),
+      ]);
+
+      setLeads(leadsRes.data.leads || []);
+      setAudits(auditsRes.data.audits || []);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { fetchData(); }, [refreshKey]); // re-run when audit completes
+
+  // ── Derived stats from same data as other pages ────────────────────
+  // Unique audited websites (same dedupe as AuditView shows)
+  const uniqueSites = [...new Set(audits.map(a => (a.site || "").trim().toLowerCase()).filter(Boolean))];
+  const totalUniqueAudits = uniqueSites.length;
+
+  const hotLeads      = leads.filter(l => l.hasAudit && l.status === "Hot").length;
+  const warmLeads     = leads.filter(l => l.hasAudit && l.status === "Warm").length;
+  const coldLeads     = leads.filter(l => l.hasAudit && l.status === "Cold").length;
+  const followUpsSent = leads.filter(l => l.followUpSent).length;
+
+  // Avg audit scores from actual audits (unique sites — latest per site)
+  const uniqueAuditMap = new Map();
+  audits.forEach(a => {
+    const key = (a.site || "").trim().toLowerCase();
+    if (!key) return;
+    const ex = uniqueAuditMap.get(key);
+    if (!ex || new Date(a.createdAt) > new Date(ex.createdAt)) uniqueAuditMap.set(key, a);
+  });
+  const uniqueAudits = Array.from(uniqueAuditMap.values());
+
+  let avgSpeed = 0, avgSeo = 0, avgMobile = 0, avgSecurity = 0, avgScore = 0;
+  if (uniqueAudits.length > 0) {
+    avgSpeed    = Math.round(uniqueAudits.reduce((s, a) => s + a.speed,    0) / uniqueAudits.length);
+    avgSeo      = Math.round(uniqueAudits.reduce((s, a) => s + a.seo,      0) / uniqueAudits.length);
+    avgMobile   = Math.round(uniqueAudits.reduce((s, a) => s + a.mobile,   0) / uniqueAudits.length);
+    avgSecurity = Math.round(uniqueAudits.reduce((s, a) => s + a.security, 0) / uniqueAudits.length);
+    avgScore    = Math.round((avgSpeed + avgSeo + avgMobile + avgSecurity) / 4);
+  }
+
+  // Monthly chart — count leads & unique audits per month
+  const buckets = buildMonthlyBuckets();
+  leads.forEach(l => {
+    const d = new Date(l.createdAt);
+    const b = buckets.find(b => b.year === d.getFullYear() && b.month === d.getMonth());
+    if (b) b.leads++;
+  });
+  uniqueAudits.forEach(a => {
+    const d = new Date(a.createdAt);
+    const b = buckets.find(b => b.year === d.getFullYear() && b.month === d.getMonth());
+    if (b) b.audits++;
+  });
+
+  // Status pie — colors EXACTLY match ScoreBadge in LeadsView/helpers.jsx
+  // Hot ≥80 = green-400 (#4ade80), Warm 60-79 = yellow-400 (#facc15), Cold <60 = red-400 (#f87171)
+  const statusDistribution = [
+    { name: "Hot",  value: hotLeads,  color: "#4ade80" },  // green-400
+    { name: "Warm", value: warmLeads, color: "#facc15" },  // yellow-400
+    { name: "Cold", value: coldLeads, color: "#f87171" },  // red-400
   ];
+
+  // Audit score breakdown
+  const auditScoreBreakdown = [
+    { label: "Speed",    score: avgSpeed,    color: "#7C3AED" },
+    { label: "SEO",      score: avgSeo,      color: "#06B6D4" },
+    { label: "Mobile",   score: avgMobile,   color: "#10B981" },
+    { label: "Security", score: avgSecurity, color: "#F59E0B" },
+  ];
+
+  // Top 5 scored leads that have audits (same filter as LeadsView)
+  const topLeads = [...leads]
+    .filter(l => l.hasAudit && l.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 5);
+
+  const hasData = leads.length > 0 || audits.length > 0;
+
+  // ── Loading ────────────────────────────────────────────────────────
+  if (loading) {
+    return (
+      <div className="p-6 flex items-center justify-center min-h-[60vh]">
+        <div className="flex flex-col items-center gap-3 text-white/40">
+          <Loader2 className="w-8 h-8 animate-spin text-purple-500" />
+          <span className="text-sm">Loading…</span>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Render ─────────────────────────────────────────────────────────
   return (
     <div className="p-6 space-y-6">
+
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold text-white" style={{ fontFamily: "Orbitron, sans-serif" }}>Dashboard</h1>
-          <p className="text-sm text-white/40 mt-0.5">Welcome back, James. Your AI is working 24/7.</p>
+          <h1 className="text-xl font-bold text-white" style={{ fontFamily: "Orbitron, sans-serif" }}>
+            Dashboard
+          </h1>
+          <p className="text-sm text-white/40 mt-0.5">
+            {leads.length} total leads · {totalUniqueAudits} unique audits
+          </p>
         </div>
         <div className="flex gap-2">
-          <GlowButton variant="secondary" onClick={() => { console.log("✅ DashboardMain: Find New Leads clicked!"); setView("leads"); }}><RefreshCw className="w-4 h-4" /> Find New Leads</GlowButton>
-          <GlowButton onClick={() => { console.log("✅ DashboardMain: New Campaign clicked!"); setView("outreach"); }}><Send className="w-4 h-4" /> New Campaign</GlowButton>
+          <GlowButton variant="secondary" onClick={fetchData}>
+            <RefreshCw className="w-4 h-4" /> Refresh
+          </GlowButton>
+          <GlowButton variant="secondary" onClick={() => setView("scraper")}>
+            <RefreshCw className="w-4 h-4" /> Find New Leads
+          </GlowButton>
+          <GlowButton onClick={() => setView("outreach")}>
+            <Send className="w-4 h-4" /> New Campaign
+          </GlowButton>
         </div>
       </div>
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {kpis.map((kpi, i) => (
-          <motion.div key={i} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.08 }}>
-            <StatCard {...kpi} />
-          </motion.div>
-        ))}
-      </div>
-      <div className="grid lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 space-y-6">
-          <GlassCard className="p-5">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="font-semibold text-white">Revenue Pipeline</h2>
-              <span className="text-xs text-white/40 font-mono">Last 8 months</span>
-            </div>
-            <ResponsiveContainer width="100%" height={180}>
-              <AreaChart data={REVENUE_DATA}>
-                <defs>
-                  <linearGradient id="revGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#7C3AED" stopOpacity={0.4} />
-                    <stop offset="95%" stopColor="#7C3AED" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
-                <XAxis dataKey="month" tick={{ fill: "rgba(255,255,255,0.4)", fontSize: 11 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fill: "rgba(255,255,255,0.4)", fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => `$${(v / 1000).toFixed(0)}K`} />
-                <Tooltip contentStyle={{ background: "#0D1235", border: "1px solid rgba(124,58,237,0.3)", borderRadius: 8, color: "white" }} />
-                <Area type="monotone" dataKey="revenue" stroke="#7C3AED" strokeWidth={2} fill="url(#revGrad)" />
-              </AreaChart>
-            </ResponsiveContainer>
-          </GlassCard>
-          <GlassCard className="p-5">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="font-semibold text-white">Pipeline Board</h2>
-              <GlowButton variant="ghost" onClick={() => setView("leads")} className="text-xs py-1 px-3">View All</GlowButton>
-            </div>
-            <div className="flex gap-3 overflow-x-auto pb-2">
-              {KANBAN_STAGES.slice(0, 4).map(stage => (
-                <div key={stage.id} className="shrink-0 w-44">
-                  <div className={cn("flex items-center justify-between mb-2 px-2 py-1 rounded-lg text-xs font-semibold", stage.bg, stage.border, "border")}>
-                    <span className={stage.color}>{stage.label}</span>
-                    <span className="text-white/40">{stage.count}</span>
-                  </div>
-                  <div className="space-y-2">
-                    {(KANBAN_CARDS[stage.id] || []).slice(0, 2).map((card, ci) => (
-                      <div key={ci} className="bg-white/[0.03] border border-white/8 rounded-xl p-2.5 hover:border-purple-500/30 transition-colors cursor-pointer">
-                        <div className="text-xs font-semibold text-white">{card.name}</div>
-                        <div className="text-xs text-purple-400 font-mono mt-0.5">{card.value}</div>
+
+      {error && (
+        <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3 text-red-400 text-sm">
+          ⚠️ {error}
+        </div>
+      )}
+
+      {!hasData ? (
+        <GlassCard className="p-12 text-center">
+          <div className="text-4xl mb-4">📊</div>
+          <p className="text-white/60 font-medium">No data yet</p>
+          <p className="text-white/30 text-sm mt-1">Scrape leads and run audits to see your dashboard here.</p>
+        </GlassCard>
+      ) : (
+        <>
+          {/* ── KPI Cards ─────────────────────────────────────────── */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            {[
+              { label: "Total Leads",      value: leads.length,     color: "text-purple-400", bg: "bg-purple-500/10 border-purple-500/20" },
+              { label: "Audits Completed", value: totalUniqueAudits, color: "text-cyan-400",   bg: "bg-cyan-500/10 border-cyan-500/20" },
+              // Hot = green (same as ScoreBadge in LeadsView)
+              { label: "Hot Leads",        value: hotLeads,          color: "text-green-400",  bg: "bg-green-500/10 border-green-500/20" },
+              { label: "Follow-ups Sent",  value: followUpsSent,     color: "text-yellow-400", bg: "bg-yellow-500/10 border-yellow-500/20" },
+            ].map((item, i) => (
+              <motion.div
+                key={i}
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ delay: i * 0.05 }}
+                className={`rounded-2xl border p-5 ${item.bg}`}
+              >
+                <div className={`text-3xl font-bold font-mono ${item.color}`}>{item.value}</div>
+                <div className="text-sm text-white/50 mt-1">{item.label}</div>
+              </motion.div>
+            ))}
+          </div>
+
+          {/* ── Charts Row 1 ──────────────────────────────────────── */}
+          <div className="grid lg:grid-cols-2 gap-6">
+            <GlassCard className="p-5">
+              <h2 className="font-semibold text-white mb-4">Leads Found Per Month</h2>
+              <ResponsiveContainer width="100%" height={220}>
+                <AreaChart data={buckets}>
+                  <defs>
+                    <linearGradient id="aGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%"  stopColor="#7C3AED" stopOpacity={0.5} />
+                      <stop offset="95%" stopColor="#7C3AED" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
+                  <XAxis dataKey="label" tick={{ fill: "rgba(255,255,255,0.4)", fontSize: 11 }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fill: "rgba(255,255,255,0.4)", fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
+                  <Tooltip {...TT} formatter={(v) => [v, "Leads"]} />
+                  <Area type="monotone" dataKey="leads" stroke="#7C3AED" strokeWidth={2} fill="url(#aGrad)" />
+                </AreaChart>
+              </ResponsiveContainer>
+            </GlassCard>
+
+            <GlassCard className="p-5">
+              <h2 className="font-semibold text-white mb-4">Unique Sites Audited Per Month</h2>
+              <ResponsiveContainer width="100%" height={220}>
+                <BarChart data={buckets}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
+                  <XAxis dataKey="label" tick={{ fill: "rgba(255,255,255,0.4)", fontSize: 11 }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fill: "rgba(255,255,255,0.4)", fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
+                  <Tooltip {...TT} formatter={(v) => [v, "Audits"]} />
+                  <Bar dataKey="audits" fill="#06B6D4" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </GlassCard>
+          </div>
+
+          {/* ── Charts Row 2 ──────────────────────────────────────── */}
+          <div className="grid lg:grid-cols-3 gap-6">
+
+            {/* Lead Status Pie */}
+            <GlassCard className="p-5">
+              <h2 className="font-semibold text-white mb-4">Lead Status Distribution</h2>
+              {statusDistribution.every(s => s.value === 0) ? (
+                <div className="flex items-center justify-center h-40 text-white/20 text-sm">No audited leads yet</div>
+              ) : (
+                <>
+                  <ResponsiveContainer width="100%" height={180}>
+                    <PieChart>
+                      <Pie data={statusDistribution} cx="50%" cy="50%" innerRadius={50} outerRadius={75} paddingAngle={4} dataKey="value">
+                        {statusDistribution.map((entry, i) => <Cell key={i} fill={entry.color} />)}
+                      </Pie>
+                      <Tooltip
+                        contentStyle={{
+                          background: "#0D1235",
+                          border: "1px solid rgba(124,58,237,0.3)",
+                          borderRadius: 8,
+                          color: "white",
+                          fontSize: 13,
+                          fontWeight: 600,
+                        }}
+                        labelStyle={{ color: "rgba(255,255,255,0.5)", fontSize: 11 }}
+                        itemStyle={{ color: "white" }}
+                        formatter={(value, name) => [
+                          <span style={{ color: "white", fontWeight: 700 }}>{value} leads</span>,
+                          <span style={{
+                            color: name === "Hot" ? "#4ade80" : name === "Warm" ? "#facc15" : "#f87171",
+                            fontWeight: 600,
+                          }}>{name}</span>
+                        ]}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                  <div className="flex justify-center gap-4 mt-2">
+                    {statusDistribution.map(s => (
+                      <div key={s.name} className="flex items-center gap-1.5 text-xs text-white/60">
+                        <span className="w-2.5 h-2.5 rounded-full" style={{ background: s.color }} />
+                        {s.name} ({s.value})
                       </div>
                     ))}
                   </div>
-                </div>
-              ))}
-            </div>
-          </GlassCard>
-        </div>
-        <div className="space-y-4">
-          <GlassCard className="p-5 h-full flex flex-col" glow>
-            <div className="flex items-center gap-2 mb-4">
-              <div className="w-6 h-6 rounded-lg bg-purple-500/20 flex items-center justify-center">
-                <Bot className="w-3.5 h-3.5 text-purple-400" />
-              </div>
-              <h2 className="font-semibold text-white text-sm">AI Copilot</h2>
-              <span className="ml-auto text-xs px-2 py-0.5 rounded-full bg-green-500/20 text-green-400 border border-green-500/30">Online</span>
-            </div>
-            <div className="flex-1 space-y-3 text-xs">
-              <div className="bg-purple-500/10 rounded-xl p-3 border border-purple-500/20 text-white/80 leading-relaxed">
-                🔥 <strong className="text-purple-300">Marco's Italian Kitchen</strong> opened your email 4x. Strike now — high intent!
-              </div>
-              <div className="bg-purple-500/10 rounded-xl p-3 border border-purple-500/20 text-white/80 leading-relaxed">
-                📊 Your open rate jumped to <strong className="text-cyan-400">61.4%</strong> — best week ever. Keep Tuesday 10am sends.
-              </div>
-              <div className="bg-purple-500/10 rounded-xl p-3 border border-purple-500/20 text-white/80 leading-relaxed">
-                💡 3 leads haven't been contacted in 48h. Want me to send follow-ups?
-              </div>
-            </div>
-            <GlowButton onClick={() => setView("copilot")} className="w-full justify-center mt-4 text-xs py-2">
-              <MessageSquare className="w-3.5 h-3.5" /> Open Full Copilot
-            </GlowButton>
-          </GlassCard>
-        </div>
-      </div>
-      <GlassCard className="p-5">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="font-semibold text-white">Recent Leads</h2>
-          <GlowButton variant="secondary" onClick={() => setView("leads")} className="text-xs py-1.5 px-3"><Eye className="w-3.5 h-3.5" /> View All</GlowButton>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-white/8">
-                {["Business", "Type", "Score", "Location", "Actions"].map(h => (
-                  <th key={h} className="pb-3 text-left text-xs text-white/40 font-medium">{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {LEADS.slice(0, 5).map((lead, i) => (
-                <tr key={lead.id} className="border-b border-white/5 hover:bg-white/[0.02] transition-colors">
-                  <td className="py-3 font-medium text-white">{lead.name}</td>
-                  <td className="py-3 text-white/40 text-xs">{lead.type}</td>
-                  <td className="py-3"><ScoreBadge score={lead.score} /></td>
-                  <td className="py-3 text-white/40 text-xs">{lead.location}</td>
-                  <td className="py-3">
-                    <div className="flex gap-1.5">
-                      <button onClick={() => setView("audit")} className="text-xs px-2 py-1 rounded-lg bg-purple-500/10 text-purple-400 border border-purple-500/20 hover:bg-purple-500/20 transition-colors">Audit</button>
-                      <button onClick={() => setView("outreach")} className="text-xs px-2 py-1 rounded-lg bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 hover:bg-cyan-500/20 transition-colors">Email</button>
+                </>
+              )}
+            </GlassCard>
+
+            {/* Avg Audit Scores */}
+            <GlassCard className="p-5">
+              <h2 className="font-semibold text-white mb-4">Avg Audit Scores</h2>
+              {uniqueAudits.length === 0 ? (
+                <div className="flex items-center justify-center h-40 text-white/20 text-sm">No audits yet</div>
+              ) : (
+                <div className="space-y-4 mt-2">
+                  {auditScoreBreakdown.map(item => (
+                    <div key={item.label}>
+                      <div className="flex items-center justify-between text-xs mb-1">
+                        <span className="text-white/60">{item.label}</span>
+                        <span className="font-mono font-bold" style={{ color: item.color }}>{item.score}/100</span>
+                      </div>
+                      <div className="w-full bg-white/5 rounded-full h-2">
+                        <div className="h-2 rounded-full transition-all duration-700" style={{ width: `${item.score}%`, background: item.color }} />
+                      </div>
                     </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </GlassCard>
+                  ))}
+                  <div className="pt-2 border-t border-white/10 flex items-center justify-between text-xs">
+                    <span className="text-white/40">Overall Average</span>
+                    <span className="font-mono font-bold text-white">{avgScore}/100</span>
+                  </div>
+                </div>
+              )}
+            </GlassCard>
+
+            {/* Top Scored Leads */}
+            <GlassCard className="p-5">
+              <h2 className="font-semibold text-white mb-4">Top Scored Leads</h2>
+              {topLeads.length === 0 ? (
+                <div className="flex items-center justify-center h-40 text-white/20 text-sm">No scored leads yet</div>
+              ) : (
+                <div className="space-y-2.5">
+                  {topLeads.map((lead, i) => (
+                    <div key={lead._id} className="flex items-center gap-3">
+                      <span className="text-xs text-white/20 w-4 font-mono">#{i + 1}</span>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-xs font-medium text-white truncate">{lead.name}</div>
+                        <div className="text-xs text-white/30 truncate">{lead.type}</div>
+                      </div>
+                      <span className={`text-xs font-mono font-bold px-2 py-0.5 rounded-full border ${
+                        lead.score >= 80 ? "bg-green-500/20 text-green-400 border-green-500/30"
+                        : lead.score >= 60 ? "bg-yellow-500/20 text-yellow-400 border-yellow-500/30"
+                        : "bg-red-500/20 text-red-400 border-red-500/30"
+                      }`}>{lead.score}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </GlassCard>
+          </div>
+
+
+        </>
+      )}
     </div>
   );
 }

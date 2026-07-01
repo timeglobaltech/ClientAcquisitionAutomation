@@ -61,11 +61,15 @@ const authRoutes = require('./routes/authRoutes');
 const leadsRoutes = require('./routes/leadsRoutes');
 const scraperRoutes = require('./routes/scraperRoutes');
 const aiRoutes = require('./routes/aiRoutes');
+const analyticsRoutes = require('./routes/analyticsRoutes');
+const meetingRoutes   = require('./routes/meetingRoutes');
 console.log('Routes loaded, mounting...');
 app.use('/api/auth', authRoutes);
 app.use('/api/leads', leadsRoutes);
 app.use('/api/scraper', scraperRoutes);
 app.use('/api/ai', aiRoutes);
+app.use('/api/analytics', analyticsRoutes);
+app.use('/api/meetings', meetingRoutes);
 console.log('Routes mounted successfully!');
 
 // Error handling middleware

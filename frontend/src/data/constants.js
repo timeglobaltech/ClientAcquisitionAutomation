@@ -153,14 +153,12 @@ export const TECH_STACK = [
 ];
 
 export const NAV_ITEMS = [
-  { id: "main", label: "Dashboard", icon: LayoutDashboard },
-  { id: "leads", label: "Leads", icon: Users },
-  { id: "scraper", label: "Scraper", icon: Search },
-  { id: "audit", label: "Audits", icon: FileText },
-  { id: "outreach", label: "Outreach", icon: Mail },
-  { id: "calendar", label: "Calendar", icon: Calendar },
-  { id: "copilot", label: "AI Copilot", icon: Bot },
-  { id: "analytics", label: "Analytics", icon: BarChart2 },
-  { id: "pricing", label: "Pricing", icon: CreditCard },
-  { id: "settings", label: "Settings", icon: Settings },
+  { id: "main",     label: "Dashboard", icon: LayoutDashboard },
+  { id: "leads",    label: "Leads",     icon: Users },
+  { id: "scraper",  label: "Scraper",   icon: Search },
+  { id: "audit",    label: "Audits",    icon: FileText },
+  { id: "outreach", label: "Outreach",  icon: Mail },
+  { id: "calendar", label: "Calendar",  icon: Calendar },
+  { id: "copilot",  label: "AI Copilot", icon: Bot },
+  { id: "settings", label: "Settings",  icon: Settings },
 ];
