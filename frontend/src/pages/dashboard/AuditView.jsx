@@ -53,14 +53,14 @@ export default function AuditView() {
     }
   };
 
-  const handleRunAudit = async (lead) => {
+  const handleRunAudit = async (lead, forceRegenerate = false) => {
     if (!lead.site || lead.site === "N/A") {
       alert("This lead has no website to audit!");
       return;
     }
     setAuditLoading(true);
     try {
-      const res = await scraperAPI.auditWebsite(lead.site, lead._id);
+      const res = await scraperAPI.auditWebsite(lead.site, lead._id, forceRegenerate);
       setSelectedAudit(res.data.audit);
       setSelectedLead(lead);
     } catch (err) {
@@ -213,10 +213,16 @@ ${audit.recommendations.map((rec, i) => `${i+1}. ${rec}`).join('\n')}
                 <h3 className="text-xl font-semibold text-white mb-1">Audit Results</h3>
                 <p className="text-sm text-white/50">Generated {new Date(selectedAudit.createdAt).toLocaleString()}</p>
               </div>
-              <GlowButton onClick={() => downloadPDF(selectedAudit, selectedLead)} className="flex items-center gap-2">
-                <Download className="w-4 h-4" />
-                Download Report
-              </GlowButton>
+              <div className="flex gap-2">
+                <GlowButton variant="ghost" onClick={() => handleRunAudit(selectedLead, true)} disabled={auditLoading} className="flex items-center gap-2">
+                  <RefreshCw className={`w-4 h-4 ${auditLoading ? 'animate-spin' : ''}`} />
+                  Regenerate
+                </GlowButton>
+                <GlowButton onClick={() => downloadPDF(selectedAudit, selectedLead)} className="flex items-center gap-2">
+                  <Download className="w-4 h-4" />
+                  Download Report
+                </GlowButton>
+              </div>
             </div>
 
             {/* Scores */}

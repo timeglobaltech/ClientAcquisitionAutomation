@@ -1,17 +1,18 @@
 import { useState, useEffect } from "react";
-import { Search, Filter, Download, CheckCircle, Globe, MapPin, Phone, Mail, Check, Link2, RefreshCw, Trash2 } from "lucide-react";
+import { Search, Filter, Download, CheckCircle, Globe, MapPin, Phone, Mail, Check, Link2, RefreshCw, Trash2, X } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { GlowButton, GlassCard } from "../../utils/helpers";
 import { scraperAPI, leadsAPI } from "../../services/api";
 
 export default function ScraperView() {
-  const [searchQuery, setSearchQuery] = useState("gym");
-  const [location, setLocation] = useState("New York");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [location, setLocation] = useState("");
   const [isScraping, setIsScraping] = useState(false);
   const [isSendingToN8n, setIsSendingToN8n] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isClearing, setIsClearing] = useState(false);
   const [allResults, setAllResults] = useState([]);
+  const [filteredResults, setFilteredResults] = useState([]);
   const [showAll, setShowAll] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [showLoadSuccess, setShowLoadSuccess] = useState(false);
@@ -21,22 +22,83 @@ export default function ScraperView() {
   const [webhookUrl, setWebhookUrl] = useState(() => {
     return localStorage.getItem('n8n_webhook_url') || '';
   });
+  const [showFilterModal, setShowFilterModal] = useState(false);
+  const [filterType, setFilterType] = useState('');
+  const [minRating, setMinRating] = useState(0);
+  const [minReviews, setMinReviews] = useState(0);
 
   // Visible results: first 20 or all
-  const results = showAll ? allResults : allResults.slice(0, 20);
+  const results = showAll ? filteredResults : filteredResults.slice(0, 20);
+
+  // Apply filters
+  const applyFilters = () => {
+    let filtered = [...allResults];
+    if (filterType) {
+      filtered = filtered.filter(lead => 
+        lead.type?.toLowerCase().includes(filterType.toLowerCase()) || 
+        lead.keyword?.toLowerCase().includes(filterType.toLowerCase())
+      );
+    }
+    if (minRating > 0) {
+      filtered = filtered.filter(lead => (lead.rating || 0) >= minRating);
+    }
+    if (minReviews > 0) {
+      filtered = filtered.filter(lead => (lead.reviews || 0) >= minReviews);
+    }
+    setFilteredResults(filtered);
+    setShowFilterModal(false);
+  };
+
+  // Reset filters
+  const resetFilters = () => {
+    setFilterType('');
+    setMinRating(0);
+    setMinReviews(0);
+    setFilteredResults(allResults);
+    setShowFilterModal(false);
+  };
+
+  // Export to CSV
+  const exportToCSV = () => {
+    if (filteredResults.length === 0) {
+      alert('No leads to export!');
+      return;
+    }
+    const headers = ['Business Name', 'Type', 'Location', 'Phone', 'Email', 'Rating', 'Reviews', 'Website'];
+    const csvContent = [
+      headers.join(','),
+      ...filteredResults.map(lead => [
+        `"${(lead.name || '').replace(/"/g, '""')}"`,
+        `"${(lead.type || '').replace(/"/g, '""')}"`,
+        `"${(lead.location || '').replace(/"/g, '""')}"`,
+        `"${(lead.phone || '').replace(/"/g, '""')}"`,
+        `"${(lead.email || '').replace(/"/g, '""')}"`,
+        lead.rating || 0,
+        lead.reviews || 0,
+        `"${(lead.website || lead.site || '').replace(/"/g, '""')}"`
+      ].join(','))
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `leads-${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   // Load saved leads from database
   const loadSavedLeads = async () => {
     setIsRefreshing(true);
     try {
-      console.log("🔄 Loading saved leads from database...");
       const response = await leadsAPI.getScrapedLeads();
-      console.log("✅ API response received:", response);
 
       const loadedLeads = response.data.leads || [];
-      console.log("📋 Loaded leads:", loadedLeads);
 
       setAllResults(loadedLeads);
+      setFilteredResults(loadedLeads);
 
       // Update added lead IDs
       const newAddedIds = new Set();
@@ -50,7 +112,7 @@ export default function ScraperView() {
       setShowLoadSuccess(true);
       setTimeout(() => setShowLoadSuccess(false), 3000);
     } catch (error) {
-      console.error("❌ Error loading saved scraped leads:", error);
+      console.error("Error loading saved scraped leads:", error);
     } finally {
       setIsRefreshing(false);
     }
@@ -63,14 +125,14 @@ export default function ScraperView() {
     }
     setIsClearing(true);
     try {
-      const response = await scraperAPI.clearSavedLeads();
-      console.log("✅ Cleared leads:", response);
+      await scraperAPI.clearSavedLeads();
       setAllResults([]);
+      setFilteredResults([]);
       setAddedLeadIds(new Set());
       setShowClearSuccess(true);
       setTimeout(() => setShowClearSuccess(false), 3000);
     } catch (error) {
-      console.error("❌ Error clearing leads:", error);
+      console.error("Error clearing leads:", error);
       alert("Failed to clear leads: " + (error.message || "Unknown error"));
     } finally {
       setIsClearing(false);
@@ -102,15 +164,14 @@ export default function ScraperView() {
     setShowLoadSuccess(false);
     setShowAll(false);
     try {
-      console.log("🚀 Starting scrape...");
       const response = await scraperAPI.scrapeLeads(searchQuery, location, webhookUrl);
-      console.log("✅ Scrape successful:", response);
       setAllResults(response.data.leads);
+      setFilteredResults(response.data.leads);
       setDataSource(response.data.source);
       setShowSuccess(true);
       setTimeout(() => setShowSuccess(false), 5000);
     } catch (error) {
-      console.error("❌ Error scraping:", error);
+      console.error("Error scraping:", error);
       alert("Scraping failed: " + (error.message || "Unknown error"));
     } finally {
       setIsScraping(false);
@@ -280,10 +341,10 @@ export default function ScraperView() {
         </div>
 
         <div className="flex gap-3 mb-6 flex-wrap">
-          <GlowButton variant="ghost" className="text-xs py-1.5 px-3">
+          <GlowButton variant="ghost" className="text-xs py-1.5 px-3" onClick={() => setShowFilterModal(true)}>
             <Filter className="w-3.5 h-3.5 mr-1.5" /> Filter Results
           </GlowButton>
-          <GlowButton variant="ghost" className="text-xs py-1.5 px-3">
+          <GlowButton variant="ghost" className="text-xs py-1.5 px-3" onClick={exportToCSV}>
             <Download className="w-3.5 h-3.5 mr-1.5" /> Export to CSV
           </GlowButton>
           <GlowButton
@@ -306,25 +367,84 @@ export default function ScraperView() {
           </GlowButton>
         </div>
 
+        {/* Filter Modal */}
+        <AnimatePresence>
+          {showFilterModal && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                className="w-full max-w-md"
+              >
+                <GlassCard className="p-6">
+                  <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-lg font-semibold text-white">Filter Leads</h3>
+                    <button onClick={() => setShowFilterModal(false)} className="text-white/60 hover:text-white">
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="text-xs text-white/60 mb-1 block">Type / Keyword</label>
+                      <input
+                        type="text"
+                        value={filterType}
+                        onChange={(e) => setFilterType(e.target.value)}
+                        className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white text-sm outline-none focus:border-purple-500/50"
+                        placeholder="e.g., gym, restaurant"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-white/60 mb-1 block">Minimum Rating (0-5)</label>
+                      <input
+                        type="number"
+                        min="0"
+                        max="5"
+                        step="0.1"
+                        value={minRating}
+                        onChange={(e) => setMinRating(parseFloat(e.target.value) || 0)}
+                        className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white text-sm outline-none focus:border-purple-500/50"
+                        placeholder="0"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-white/60 mb-1 block">Minimum Reviews</label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={minReviews}
+                        onChange={(e) => setMinReviews(parseInt(e.target.value) || 0)}
+                        className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white text-sm outline-none focus:border-purple-500/50"
+                        placeholder="0"
+                      />
+                    </div>
+                    <div className="flex gap-2 pt-2">
+                      <GlowButton variant="ghost" onClick={resetFilters} className="flex-1 justify-center">
+                        Reset
+                      </GlowButton>
+                      <GlowButton onClick={applyFilters} className="flex-1 justify-center">
+                        Apply Filters
+                      </GlowButton>
+                    </div>
+                  </div>
+                </GlassCard>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
+
         <div className="overflow-x-auto">
-          <table className="w-full text-sm min-w-[1100px]">
+          <table className="w-full text-sm table-fixed">
             <thead>
               <tr className="border-b border-white/8">
-                {["Business Name", "Type", "Location", "Phone", "Email", "Rating", "Actions"].map((header, i) => (
-                  <th
-                    key={i}
-                    className={`pb-4 text-left text-xs text-white/40 font-medium whitespace-nowrap
-                      ${i === 0 ? "w-[28%]" : ""}
-                      ${i === 1 ? "w-[10%]" : ""}
-                      ${i === 2 ? "w-[12%]" : ""}
-                      ${i === 3 ? "w-[14%]" : ""}
-                      ${i === 4 ? "w-[18%]" : ""}
-                      ${i === 5 ? "w-[8%]" : ""}
-                      ${i === 6 ? "w-[10%] text-right" : ""}`}
-                  >
-                    {header}
-                  </th>
-                ))}
+                <th className="px-4 py-3 text-left text-xs text-white/40 font-medium w-1/3">Business Name</th>
+                <th className="px-4 py-3 text-left text-xs text-white/40 font-medium w-1/6">Type</th>
+                <th className="px-4 py-3 text-left text-xs text-white/40 font-medium w-1/6">Location</th>
+                <th className="px-4 py-3 text-left text-xs text-white/40 font-medium w-1/6">Phone</th>
+                <th className="px-4 py-3 text-left text-xs text-white/40 font-medium w-1/6">Email</th>
+                <th className="px-4 py-3 text-left text-xs text-white/40 font-medium w-1/12">Rating</th>
+                <th className="px-4 py-3 text-left text-xs text-white/40 font-medium w-1/6 text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -337,27 +457,36 @@ export default function ScraperView() {
                     transition={{ delay: i * 0.05 }}
                     className="border-b border-white/5 hover:bg-purple-500/5 transition-colors group"
                   >
-                    <td className="py-4 font-semibold text-white flex items-center gap-2">
-                      <Globe className="w-3.5 h-3.5 text-purple-400" /> {lead.name}
-                    </td>
-                    <td className="py-4 text-white/60">{lead.type}</td>
-                    <td className="py-4 text-white/60 text-sm">{lead.location}</td>
-                    <td className="py-4 text-white/70 text-sm">
-                      <div className="flex items-center gap-1.5">
-                        <Phone className="w-3.5 h-3.5 flex-shrink-0" />
-                        {lead.phone}
+                    <td className="px-4 py-3 font-semibold text-white align-top">
+                      <div className="flex items-start gap-2">
+                        <Globe className="w-3.5 h-3.5 text-purple-400 flex-shrink-0 mt-0.5" />
+                        <div className="flex-1 min-w-0">
+                          <span className="break-words whitespace-pre-wrap">{lead.name}</span>
+                        </div>
                       </div>
                     </td>
-                    <td className="py-4 text-white/70 text-sm">
-                      <div className="flex items-center gap-1.5">
-                        <Mail className="w-3.5 h-3.5 flex-shrink-0" />
-                        {lead.email}
+                    <td className="px-4 py-3 text-white/60 align-top break-words whitespace-pre-wrap">{lead.type}</td>
+                    <td className="px-4 py-3 text-white/60 text-sm align-top break-words whitespace-pre-wrap">{lead.location}</td>
+                    <td className="px-4 py-3 text-white/70 text-sm align-top">
+                      <div className="flex items-start gap-1.5">
+                        <Phone className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+                        <div className="flex-1 min-w-0">
+                          <span className="break-words whitespace-pre-wrap">{lead.phone}</span>
+                        </div>
                       </div>
                     </td>
-                    <td className="py-4">
+                    <td className="px-4 py-3 text-white/70 text-sm align-top">
+                      <div className="flex items-start gap-1.5">
+                        <Mail className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+                        <div className="flex-1 min-w-0">
+                          <span className="break-words whitespace-pre-wrap">{lead.email}</span>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
                       <span className="text-yellow-400 font-semibold">★ {lead.rating} ({lead.reviews})</span>
                     </td>
-                    <td className="py-4 text-right">
+                    <td className="px-4 py-3 text-right">
                       <div className="flex gap-2 justify-end">
                         <button className="text-xs px-4 py-1.5 rounded-lg bg-purple-500/10 text-purple-400 border border-purple-500/20 hover:bg-purple-500/20 transition-colors">
                           View

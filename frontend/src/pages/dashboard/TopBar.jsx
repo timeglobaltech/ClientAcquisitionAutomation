@@ -2,8 +2,11 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Search, Bell, ChevronRight, X } from "lucide-react";
+import { useAuth } from "../../contexts/AuthContext";
+import { getUserInitials } from "../../utils/helpers";
 
 export default function TopBar({ view }) {
+  const { user } = useAuth();
   const [notifOpen, setNotifOpen] = useState(false);
   const notifications = [
     { text: "Marco's Kitchen opened your email 4x", time: "2m ago", dot: "bg-purple-400" },
@@ -48,7 +51,9 @@ export default function TopBar({ view }) {
             )}
           </AnimatePresence>
         </div>
-        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-600 to-blue-500 flex items-center justify-center text-white text-xs font-bold">JD</div>
+        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-600 to-blue-500 flex items-center justify-center text-white text-xs font-bold">
+          {getUserInitials(user?.name)}
+        </div>
       </div>
     </div>
   );

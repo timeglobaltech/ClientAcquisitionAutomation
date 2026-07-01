@@ -1,6 +1,6 @@
 
 import { Bot, LogOut, ChevronLeft, ChevronRight } from "lucide-react";
-import { cn } from "../../utils/helpers";
+import { cn, getUserInitials } from "../../utils/helpers";
 import { NAV_ITEMS } from "../../data/constants";
 import { useAuth } from "../../contexts/AuthContext";
 
@@ -38,7 +38,7 @@ export default function Sidebar({ view, setView, collapsed, setCollapsed }) {
       )}
       <nav className="flex-1 py-4 overflow-y-auto">
         {NAV_ITEMS.map(item => (
-          <button key={item.id} onClick={() => { console.log(`✅ Sidebar: ${item.label} clicked!`); setView(item.id); }}
+          <button key={item.id} onClick={() => setView(item.id)}
             className={cn(
               "w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-all duration-150",
               collapsed ? "justify-center" : "",
@@ -59,19 +59,19 @@ export default function Sidebar({ view, setView, collapsed, setCollapsed }) {
         {!collapsed ? (
           <div className="flex items-center gap-2">
             <div className="w-7 h-7 rounded-full bg-gradient-to-br from-purple-600 to-blue-500 flex items-center justify-center text-white text-xs font-bold">
-              {user?.name?.charAt(0).toUpperCase() || "U"}
+              {getUserInitials(user?.name)}
             </div>
             <div className="flex-1 min-w-0">
               <div className="text-xs font-semibold text-white truncate">{user?.name || "User"}</div>
               <div className="text-xs text-white/40 truncate">{user?.email || ""}</div>
             </div>
-            <button onClick={() => { console.log("✅ Sidebar: Log Out clicked!"); logout(); }} className="text-white/30 hover:text-white/60 transition-colors">
+            <button onClick={logout} className="text-white/30 hover:text-white/60 transition-colors">
               <LogOut className="w-3.5 h-3.5" />
             </button>
           </div>
         ) : (
           <div className="w-7 h-7 rounded-full bg-gradient-to-br from-purple-600 to-blue-500 flex items-center justify-center text-white text-xs font-bold">
-            {user?.name?.charAt(0).toUpperCase() || "U"}
+            {getUserInitials(user?.name)}
           </div>
         )}
       </div>

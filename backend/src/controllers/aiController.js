@@ -1,10 +1,6 @@
 
-const { GoogleGenerativeAI } = require('@google/generative-ai');
 const Chat = require('../models/Chat');
-
-// Initialize Gemini
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+const aiProvider = require('../utils/aiProvider');
 
 // System prompt for sales copilot
 const SYSTEM_PROMPT = `You are AISA (AI Sales Assistant), a friendly, helpful, and conversational sales copilot for a client acquisition automation platform. Think of yourself as a supportive colleague who's always ready to help!
@@ -58,36 +54,11 @@ exports.chatWithAI = async (req, res) => {
       });
     }
 
-    // Build the conversation history
-    let conversationHistory = [{ role: 'user', parts: [{ text: SYSTEM_PROMPT }] }];
-    
-    // Add the conversation messages
-    messages.forEach(msg => {
-      conversationHistory.push({
-        role: msg.role === 'user' ? 'user' : 'model',
-        parts: [{ text: msg.text }]
-      });
-    });
+    console.log(`Starting chat via "${aiProvider.activeProvider()}" provider...`);
 
-    console.log('Starting chat with Gemini...');
-
-    // Start chat session
-    const chat = model.startChat({
-      history: conversationHistory.slice(0, -1), // Exclude last user message from history
-      generationConfig: {
-        maxOutputTokens: 2048,
-        temperature: 0.7,
-        topP: 0.9,
-      },
-    });
-
-    // Get last user message and get response from Gemini
-    const lastMessage = messages[messages.length - 1];
-    console.log('Sending message to Gemini:', lastMessage.text.substring(0, 50) + '...');
-    const result = await chat.sendMessage(lastMessage.text);
-    const response = await result.response;
-    const aiText = response.text();
-    console.log('Received response from Gemini:', aiText.substring(0, 50) + '...');
+    // Get the assistant reply from the active provider (Groq -> OpenAI -> Gemini)
+    const aiText = await aiProvider.chat({ systemPrompt: SYSTEM_PROMPT, messages });
+    console.log('Received AI response:', aiText.substring(0, 50) + '...');
 
     res.status(200).json({
       status: 'success',
@@ -97,23 +68,18 @@ exports.chatWithAI = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('AI Chat Error Details:', error);
-    console.error('Error stack:', error.stack);
-    
-    // Handle specific error cases
+    const statusCode = error.status || error.response?.status || 500;
+    console.error('AI Chat Error:', error.response?.data || error.message);
+
     let errorMessage = 'Sorry, I am having trouble connecting to the AI service right now. Please try again later.';
-    let statusCode = 500;
-    
-    // Check if it's a Google API error with status
-    if (error.status) {
-      statusCode = error.status;
-      if (statusCode === 429) {
-        errorMessage = 'Gemini API quota exceeded! Please wait a minute and try again.';
-      } else if (statusCode === 401 || statusCode === 403) {
-        errorMessage = 'Invalid Gemini API key! Please check your backend .env file.';
-      }
+    if (statusCode === 429) {
+      errorMessage = 'AI rate limit reached. Please wait a moment and try again.';
+    } else if (statusCode === 401 || statusCode === 403) {
+      errorMessage = 'Invalid or missing AI API key! Please check GROQ_API_KEY in the backend .env file.';
+    } else if (statusCode === 503) {
+      errorMessage = error.message;
     }
-    
+
     res.status(statusCode).json({
       status: 'error',
       message: errorMessage

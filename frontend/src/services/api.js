@@ -72,14 +72,17 @@ export const scraperAPI = {
     method: 'POST',
     body: JSON.stringify({ query, location, webhookUrl }),
   }),
-  auditWebsite: (site, leadId) => apiRequest('/scraper/audit', {
+  auditWebsite: (site, leadId, forceRegenerate = false) => apiRequest('/scraper/audit', {
     method: 'POST',
-    body: JSON.stringify({ site, leadId }),
+    body: JSON.stringify({ site, leadId, forceRegenerate }),
   }),
   getUserAudits: () => apiRequest('/scraper/audits'),
   getAuditById: (id) => apiRequest(`/scraper/audits/${id}`),
   getGroupedAudits: () => apiRequest('/scraper/audits/grouped'),
-  getAuditByLead: (leadId) => apiRequest(`/scraper/audits/lead/${leadId}`)
+  getAuditByLead: (leadId) => apiRequest(`/scraper/audits/lead/${leadId}`),
+  clearSavedLeads: () => apiRequest('/scraper/clear', {
+    method: 'DELETE',
+  }),
 };
 
 // AI API

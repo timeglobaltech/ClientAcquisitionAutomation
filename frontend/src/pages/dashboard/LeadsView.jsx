@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { Search, Filter, CheckCircle, Globe, Calendar, Clock, Mail, MessageCircle, Info } from "lucide-react";
+import { Search, Filter, CheckCircle, Globe, Calendar, Clock, Mail, MessageCircle } from "lucide-react";
 import { cn, GlowButton, GlassCard, ScoreBadge } from "../../utils/helpers";
 
 import { scraperAPI, leadsAPI } from "../../services/api";
@@ -14,27 +14,23 @@ export default function LeadsView({ setView }) {
   const [filter, setFilter] = useState("All");
 
   // Visible leads
-  const filteredLeads = filter === "All" ? allLeads : allLeads.filter(l => l.status === filter);
+  const filteredLeads = filter === "All" 
+    ? allLeads 
+    : filter === "Pending" 
+    ? allLeads.filter(l => !l.hasAudit || l.score === 0) 
+    : allLeads.filter(l => l.hasAudit && l.status === filter); // Only show leads with audit for Hot/Warm/Cold
   const leads = showAll ? filteredLeads : filteredLeads.slice(0, 20);
-
-  console.log("🔍 LeadsView Debug Info:", {
-    allLeadsCount: allLeads.length,
-    filteredLeadsCount: filteredLeads.length,
-    visibleLeadsCount: leads.length,
-    showAll,
-    filter
-  });
+  
+  console.log("Filter:", filter, "Filtered leads:", filteredLeads);
 
   useEffect(() => {
     const fetchLeads = async () => {
       try {
-        console.log("🔄 LeadsView: Fetching leads...");
         const response = await leadsAPI.getLeads();
-        console.log("✅ LeadsView: API response received:", response);
+        console.log("Leads data from backend:", response.data.leads); // Debug log
         setAllLeads(response.data.leads);
-        console.log("✅ LeadsView: Leads set in state:", response.data.leads);
       } catch (err) {
-        console.error("❌ LeadsView: Failed to fetch leads:", err);
+        console.error("Failed to fetch leads:", err);
       } finally {
         setLoading(false);
       }
@@ -43,7 +39,6 @@ export default function LeadsView({ setView }) {
   }, []);
 
   const handleFind = async () => {
-    console.log("handleFind called!");
     setFinding(true);
     setFound(false);
     setShowAll(false);
@@ -82,34 +77,37 @@ export default function LeadsView({ setView }) {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-xl font-bold text-white" style={{ fontFamily: "Orbitron, sans-serif" }}>Leads</h1>
-          <p className="text-sm text-white/40 mt-0.5">Your qualified leads ready for outreach</p>
+          <p className="text-sm text-white/40 mt-0.5">
+            {allLeads.length} total leads • {filteredLeads.length} matching {filter}
+          </p>
         </div>
-        <GlowButton onClick={() => { console.log("✅ LeadsView: Find New Leads button clicked!"); handleFind(); }} disabled={finding}>
+        <GlowButton onClick={handleFind} disabled={finding}>
           {finding ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full mr-2" style={{ animation: "spin 0.8s linear infinite" }} /> : <Search className="w-4 h-4 mr-2" />}
           {finding ? "Scraping..." : "Find New Leads"}
         </GlowButton>
       </div>
 
-      {/* Debug Info Box */}
-      <div className="p-3 rounded-xl border border-blue-500/30 bg-blue-500/10 text-blue-400 flex items-center gap-2">
-        <Info className="w-4 h-4" />
-        <span className="text-xs">
-          Debug Info: Total {allLeads.length} leads | Filtered: {filteredLeads.length} | Showing: {leads.length} | Show All: {showAll ? "Yes" : "No"}
-        </span>
-      </div>
+
 
       <AnimatePresence>
         {found && <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="flex items-center gap-3 p-4 rounded-xl bg-green-500/10 border border-green-500/30 text-green-400"><CheckCircle className="w-5 h-5" />New leads found and added to list!</motion.div>}
       </AnimatePresence>
       <div className="flex gap-2 flex-wrap">
-        {["All", "Hot", "Warm", "Cold"].map((f) => (<button key={f} onClick={() => setFilter(f)} className={cn("px-3 py-1.5 rounded-lg text-xs font-medium transition-all", filter === f ? "bg-purple-500/20 text-purple-400 border border-purple-500/40" : "bg-white/5 text-white/40 hover:bg-white/10 hover:text-white/70")}>{f}</button>))}
+        {["All", "Pending", "Hot", "Warm", "Cold"].map((f) => (<button key={f} onClick={() => setFilter(f)} className={cn("px-3 py-1.5 rounded-lg text-xs font-medium transition-all", filter === f ? "bg-purple-500/20 text-purple-400 border border-purple-500/40" : "bg-white/5 text-white/40 hover:bg-white/10 hover:text-white/70")}>{f}</button>))}
       </div>
       <GlassCard className="overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full text-sm table-fixed">
             <thead className="bg-white/5">
               <tr>
-                {["Business", "Type", "Location", "Score", "Response", "Meeting", "Follow-Up", "Actions"].map((h) => <th key={h} className="px-4 py-3 text-left text-xs text-white/40 font-medium">{h}</th>)}
+                <th className="px-4 py-3 text-left text-xs text-white/40 font-medium w-1/4">Business</th>
+                <th className="px-4 py-3 text-left text-xs text-white/40 font-medium w-[12%]">Type</th>
+                <th className="px-4 py-3 text-left text-xs text-white/40 font-medium w-[18%]">Location</th>
+                <th className="px-4 py-3 text-left text-xs text-white/40 font-medium w-[10%]">Score</th>
+                <th className="px-4 py-3 text-left text-xs text-white/40 font-medium w-[10%]">Response</th>
+                <th className="px-4 py-3 text-left text-xs text-white/40 font-medium w-[10%]">Meeting</th>
+                <th className="px-4 py-3 text-left text-xs text-white/40 font-medium w-[10%]">Follow-Up</th>
+                <th className="px-4 py-3 text-left text-xs text-white/40 font-medium w-[16%]">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -122,26 +120,28 @@ export default function LeadsView({ setView }) {
               ) : leads.length > 0 ? (
                 leads.map((lead, i) => (
                   <motion.tr key={lead._id || lead.id || `lead-${i}`} initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.05 }} className="border-t border-white/5 hover:bg-white/5 transition-colors">
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <Globe className="w-4 h-4 text-purple-400" />
-                        <div className="font-medium text-white">{lead.name}</div>
+                    <td className="px-4 py-3 align-top">
+                      <div className="flex items-start gap-2">
+                        <Globe className="w-4 h-4 text-purple-400 flex-shrink-0 mt-0.5" />
+                        <div className="flex-1 min-w-0">
+                          <div className="font-medium text-white break-words whitespace-pre-wrap">{lead.name}</div>
+                          <div className="text-xs text-white/40 mt-0.5 break-words whitespace-pre-wrap">{lead.email}</div>
+                        </div>
                       </div>
-                      <div className="text-xs text-white/40 mt-0.5">{lead.email}</div>
                     </td>
-                    <td className="px-4 py-3 text-white/60">{lead.type}</td>
-                    <td className="px-4 py-3 text-white/40 text-xs">{lead.location}</td>
-                    <td className="px-4 py-3"><ScoreBadge score={lead.score} /></td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3 text-white/60 align-top break-words whitespace-pre-wrap">{lead.type}</td>
+                    <td className="px-4 py-3 text-white/40 text-xs align-top break-words whitespace-pre-wrap">{lead.location}</td>
+                    <td className="px-4 py-3 align-top"><ScoreBadge score={lead.score} hasAudit={lead.hasAudit} /></td>
+                    <td className="px-4 py-3 align-top">
                       {lead.response ? <span className="text-xs text-green-400 flex items-center gap-1"><MessageCircle className="w-3 h-3" />Responded</span> : <span className="text-xs text-white/30">—</span>}
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3 align-top">
                       {lead.meetingBooked ? <span className="text-xs text-cyan-400 flex items-center gap-1"><Calendar className="w-3 h-3" />Booked</span> : <span className="text-xs text-white/30">—</span>}
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3 align-top">
                       {lead.followUpSent ? <span className="text-xs text-orange-400 flex items-center gap-1"><Clock className="w-3 h-3" />Sent</span> : <span className="text-xs text-white/30">—</span>}
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3 align-top">
                       <div className="flex gap-1.5">
                         <button onClick={() => setView("audit")} className="text-xs px-2 py-1 rounded-lg bg-purple-500/10 text-purple-400 border border-purple-500/20 hover:bg-purple-500/20 transition-colors">Audit</button>
                         <button onClick={() => setView("outreach")} className="text-xs px-2 py-1 rounded-lg bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 hover:bg-cyan-500/20 transition-colors">Email</button>
@@ -163,10 +163,7 @@ export default function LeadsView({ setView }) {
         {/* View All Button */}
         {!showAll && filteredLeads.length > 20 && (
           <div className="text-center py-6">
-            <GlowButton onClick={() => {
-              console.log("✅ LeadsView: View All button clicked!");
-              setShowAll(true);
-            }} className="justify-center">
+            <GlowButton onClick={() => setShowAll(true)} className="justify-center">
               View All {filteredLeads.length} Leads
             </GlowButton>
           </div>
@@ -175,10 +172,7 @@ export default function LeadsView({ setView }) {
         {/* Show Less Button */}
         {showAll && filteredLeads.length > 20 && (
           <div className="text-center py-6">
-            <GlowButton variant="ghost" onClick={() => {
-              console.log("✅ LeadsView: Show Less button clicked!");
-              setShowAll(false);
-            }} className="justify-center">
+            <GlowButton variant="ghost" onClick={() => setShowAll(false)} className="justify-center">
               Show Less
             </GlowButton>
           </div>

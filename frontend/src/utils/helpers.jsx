@@ -5,7 +5,21 @@ export function cn(...classes) {
   return classes.filter(Boolean).join(" ");
 }
 
-export function ScoreBadge({ score }) {
+export function getUserInitials(name) {
+  if (!name) return "U";
+  const nameParts = name.trim().split(/\s+/);
+  if (nameParts.length === 1) return nameParts[0].charAt(0).toUpperCase();
+  return (nameParts[0].charAt(0) + nameParts[nameParts.length - 1].charAt(0)).toUpperCase();
+}
+
+export function ScoreBadge({ score, hasAudit }) {
+  if (!hasAudit || score === 0) {
+    return (
+      <span className="px-2 py-0.5 rounded-full text-xs font-semibold border font-mono bg-gray-500/20 text-gray-400 border-gray-500/30">
+        Pending
+      </span>
+    );
+  }
   const color = score >= 80 ? "bg-green-500/20 text-green-400 border-green-500/30"
     : score >= 60 ? "bg-yellow-500/20 text-yellow-400 border-yellow-500/30"
     : "bg-red-500/20 text-red-400 border-red-500/30";
@@ -36,13 +50,16 @@ export function GlowButton({ children, onClick, variant = "primary", className =
   );
 }
 
-export function GlassCard({ children, className = "", glow = false }) {
+export function GlassCard({ children, className = "", glow = false, ...props }) {
   return (
-    <div className={cn(
-      "rounded-2xl border bg-white/[0.03] backdrop-blur-sm",
-      glow ? "border-purple-500/30 shadow-[0_0_30px_rgba(124,58,237,0.15)]" : "border-white/8",
-      className
-    )}>
+    <div
+      className={cn(
+        "rounded-2xl border bg-white/[0.03] backdrop-blur-sm",
+        glow ? "border-purple-500/30 shadow-[0_0_30px_rgba(124,58,237,0.15)]" : "border-white/8",
+        className
+      )}
+      {...props}
+    >
       {children}
     </div>
   );

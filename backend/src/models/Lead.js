@@ -15,6 +15,10 @@ const LeadSchema = new mongoose.Schema({
     type: String,
     required: [true, 'Please add a business type']
   },
+  keyword: {
+    type: String,
+    default: 'Other'
+  },
   site: {
     type: String,
     required: [true, 'Please add a website']

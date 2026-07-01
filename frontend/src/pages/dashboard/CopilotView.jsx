@@ -8,15 +8,47 @@ import { aiAPI } from "../../services/api";
 import { useAuth } from "../../contexts/AuthContext";
 import { toast } from "sonner";
 
+// --- Frontend (localStorage) chat persistence helpers ---
+const storageKey = (user) => (user ? `aisa_chats_${user.id || user._id}` : null);
+
+const loadCachedChats = (user) => {
+  const key = storageKey(user);
+  if (!key) return [];
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+};
+
+const saveCachedChats = (user, chats) => {
+  const key = storageKey(user);
+  if (!key) return;
+  try {
+    localStorage.setItem(key, JSON.stringify(chats));
+  } catch {
+    // ignore quota / serialization errors
+  }
+};
+
 export default function CopilotView() {
   const { user } = useAuth();
-  const [chats, setChats] = useState([]);
+  // Hydrate instantly from localStorage so chats appear without waiting on the DB
+  const [chats, setChats] = useState(() => loadCachedChats(user));
   const [currentChatId, setCurrentChatId] = useState(null);
   const [input, setInput] = useState("");
   const [typing, setTyping] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [loading, setLoading] = useState(true);
   const bottomRef = useRef(null);
+
+  // Persist every chat change to the frontend (localStorage) as well as the DB
+  useEffect(() => {
+    if (user && chats.length > 0) {
+      saveCachedChats(user, chats);
+    }
+  }, [user, chats]);
 
   const createNewChat = useCallback(async () => {
     const newChatData = {
@@ -41,35 +73,50 @@ export default function CopilotView() {
   useEffect(() => {
     const loadChats = async () => {
       if (!user) return;
-      
+
+      // Show cached (frontend) chats instantly — no waiting on the network
+      const cached = loadCachedChats(user);
+      if (cached.length > 0) {
+        setChats(cached);
+        setCurrentChatId((prev) => prev || cached[0]._id || cached[0].id);
+        setLoading(false);
+      }
+
       try {
-        setLoading(true);
+        // Database is the source of truth — reconcile once it responds
         const response = await aiAPI.getChats();
         let loadedChats = response.data.chats;
-        
+
         if (loadedChats.length === 0) {
           const newChat = await createNewChat();
           loadedChats = [newChat];
         }
-        
+
         setChats(loadedChats);
-        setCurrentChatId(loadedChats[0]._id || loadedChats[0].id);
+        setCurrentChatId((prev) => {
+          const stillExists = loadedChats.some((c) => (c._id || c.id) === prev);
+          return stillExists ? prev : loadedChats[0]._id || loadedChats[0].id;
+        });
+        saveCachedChats(user, loadedChats);
       } catch (error) {
         console.error("Error loading chats:", error);
-        toast.error("Failed to load chats");
-        const fallbackChat = {
-          id: Date.now().toString(),
-          title: "New Chat",
-          messages: [...CHAT_MESSAGES_INIT],
-          createdAt: new Date()
-        };
-        setChats([fallbackChat]);
-        setCurrentChatId(fallbackChat.id);
+        // If we already have cached chats, keep using them silently (offline-friendly)
+        if (cached.length === 0) {
+          toast.error("Failed to load chats");
+          const fallbackChat = {
+            id: Date.now().toString(),
+            title: "New Chat",
+            messages: [...CHAT_MESSAGES_INIT],
+            createdAt: new Date()
+          };
+          setChats([fallbackChat]);
+          setCurrentChatId(fallbackChat.id);
+        }
       } finally {
         setLoading(false);
       }
     };
-    
+
     loadChats();
   }, [user, createNewChat]);
 
